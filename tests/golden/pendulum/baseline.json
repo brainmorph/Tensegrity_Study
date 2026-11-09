@@ -1,6 +1,6 @@
 {
   "name": "pendulum",
-  "description": "Slender bar (1 kg, 1 m) pinned at one end to the origin, released from rest 1 rad from hanging, standard gravity. Reduced-coordinate stand-in until M2 pins. RK4, dt 1e-4 s, 2 s, sampled every 0.2 s.",
+  "description": "Slender bar (1 kg, 1 m) pinned at one end to the origin, released from rest 1 rad from hanging, standard gravity. Lagrange-multiplier pin in maximal coordinates (M1 baseline from a reduced one-angle model). RK4, dt 1e-4 s, 2 s, sampled every 0.2 s.",
   "quantities": {
     "kinetic_energy": [
       0,

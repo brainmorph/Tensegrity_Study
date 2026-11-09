@@ -1,12 +1,14 @@
 using Tensegrity.Core.Integration;
+using Tensegrity.Core.Mathematics;
 using Tensegrity.Core.Systems;
 using Tensegrity.Testing.Scenarios;
 
 namespace Tensegrity.Core.Tests.Physics;
 
 /// <summary>
-/// Test 3 (PLAN.md section 7): link pinned at one end. Uses the reduced
-/// one-angle model until M2 adds pin constraints (see <see cref="ReducedPendulum"/>).
+/// Test 3 (PLAN.md section 7): a link pinned at one end, simulated in maximal
+/// coordinates with a Lagrange-multiplier pin and checked against the
+/// closed-form period.
 /// </summary>
 public class PendulumTests
 {
@@ -17,18 +19,20 @@ public class PendulumTests
     /// cubic Hermite interpolant of the step (uses θ and θ̇ at both ends),
     /// so the timing error is O(dt⁴) like the integrator itself.
     /// </summary>
-    private static double MeasurePeriod(ReducedPendulum pendulum, double amplitude, double dt, int periods)
+    private static double MeasurePeriod(double amplitude, double dt, int periods)
     {
-        var hang = pendulum.HangingAngle;
-        var estimate = pendulum.ExactPeriod(amplitude);
+        var theory = PendulumScenario.CreateTheory();
+        var system = PendulumScenario.CreateSystem();
+        var hang = theory.HangingAngle;
+        var estimate = theory.ExactPeriod(amplitude);
         var steps = (long)Math.Ceiling(((periods + 0.5) * estimate) / dt);
-        var state = new SystemState([hang + amplitude, 0.0]);
+        var state = PendulumScenario.CreateState(system, theory, hang + amplitude, 0.0);
         var crossings = new List<double>();
         (double T, double Phi, double Omega)? previous = null;
 
-        FixedStepRunner.Run(state, new Rk4Integrator(), pendulum.Evaluate, dt, steps, (_, s) =>
+        FixedStepRunner.Run(state, new Rk4Integrator(), system.Evaluate, dt, steps, (_, s) =>
         {
-            var current = (s.Time, s.Values[0] - hang, s.Values[1]);
+            var current = (s.Time, system.GetPose(s.Values, 0).Angle - hang, system.GetTwist(s.Values, 0).Angular);
             if (previous is { } p && Math.Sign(p.Phi) != Math.Sign(current.Item2) && current.Item2 != 0)
             {
                 crossings.Add(HermiteRoot(p, current));
@@ -72,47 +76,83 @@ public class PendulumTests
     [Fact]
     public void CompleteEllipticKMatchesKnownValues()
     {
-        Assert.Equal(Math.PI / 2, ReducedPendulum.CompleteEllipticK(0), 15);
+        Assert.Equal(Math.PI / 2, PendulumTheory.CompleteEllipticK(0), 15);
 
         // K(k² = 1/2) = Γ(1/4)² / (4√π) = 1.854074677301372 (A&S 17.3).
-        Assert.Equal(1.854074677301372, ReducedPendulum.CompleteEllipticK(Math.Sqrt(0.5)), 14);
+        Assert.Equal(1.854074677301372, PendulumTheory.CompleteEllipticK(Math.Sqrt(0.5)), 14);
     }
 
     [Fact]
     public void PivotInertiaAndPeriodFormulaForUniformBar()
     {
-        var pendulum = PendulumScenario.CreatePendulum();
+        var theory = PendulumScenario.CreateTheory();
 
         // Uniform bar about its end: I = m·L²/3 = 1/3; d = L/2.
-        Assert.Equal(1.0 / 3.0, pendulum.PivotInertia, 15);
-        Assert.Equal(0.5, pendulum.Distance, 15);
-        Assert.Equal(2 * Math.PI * Math.Sqrt(2.0 / (3.0 * 9.81)), pendulum.SmallAmplitudePeriod, 14);
-        Assert.Equal(-Math.PI / 2, pendulum.HangingAngle, 15);
+        Assert.Equal(1.0 / 3.0, theory.PivotInertia, 15);
+        Assert.Equal(0.5, theory.Distance, 15);
+        Assert.Equal(2 * Math.PI * Math.Sqrt(2.0 / (3.0 * 9.81)), theory.SmallAmplitudePeriod, 14);
+        Assert.Equal(-Math.PI / 2, theory.HangingAngle, 15);
     }
 
     [Fact]
-    public void HangingAtRestIsAnEquilibrium()
+    public void HangingAtRestIsAnEquilibriumAndThePinCarriesTheWeight()
     {
-        var pendulum = PendulumScenario.CreatePendulum();
-        Span<double> dy = stackalloc double[2];
+        var theory = PendulumScenario.CreateTheory();
+        var system = PendulumScenario.CreateSystem();
+        var state = PendulumScenario.CreateState(system, theory, theory.HangingAngle, 0.0);
+        var dy = new double[system.StateLength];
+        var reaction = new Vector2d[1];
 
-        pendulum.Evaluate(0, [pendulum.HangingAngle, 0.0], dy);
+        system.Evaluate(0, state.Values, dy);
+        system.GetPinReactions(state.Values, reaction);
 
-        // Not exactly zero: −π/2 is not representable, so cos(θ) ≈ 6.1e-17 and
-        // θ̈ ≈ 6.1e-17 · m·g·d / I_pivot ≈ 9e-16 rad/s².
-        Assert.Equal(0.0, dy[0]);
-        Assert.Equal(0.0, dy[1], 1e-14);
+        // −π/2 is not representable, so cos(θ) ≈ 6.1e-17 and the residual
+        // accelerations sit at the 1e-15 level rather than exactly zero.
+        Assert.All(dy, d => Assert.Equal(0.0, d, 1e-14));
+        Assert.Equal(0.0, reaction[0].X, 1e-14);
+        Assert.Equal(1.0 * 9.81, reaction[0].Y, 1e-13);
+    }
+
+    [Fact]
+    public void PinReactionAtTheBottomOfASwingIncludesCentripetalForce()
+    {
+        var theory = PendulumScenario.CreateTheory();
+        var system = PendulumScenario.CreateSystem();
+        const double omega = 2.5;
+        var state = PendulumScenario.CreateState(system, theory, theory.HangingAngle, omega);
+        var reaction = new Vector2d[1];
+
+        system.GetPinReactions(state.Values, reaction);
+
+        // Hanging straight down, gravity has no moment, so θ̈ = 0 and the pin
+        // supplies weight plus centripetal force: m·(g + ω²·d), straight up.
+        Assert.Equal(0.0, reaction[0].X, 1e-13);
+        Assert.Equal(1.0 * (9.81 + (omega * omega * theory.Distance)), reaction[0].Y, 1e-12);
+    }
+
+    [Fact]
+    public void StateAtSatisfiesThePinExactly()
+    {
+        var theory = PendulumScenario.CreateTheory();
+        var system = PendulumScenario.CreateSystem();
+        const double omega = 1.7;
+
+        var state = PendulumScenario.CreateState(system, theory, 0.4, omega);
+
+        Assert.Equal(0.0, system.PinPositionResidual(state.Values), 15);
+        Assert.Equal(0.0, system.PinVelocityResidual(state.Values), 15);
+        Assert.Equal(0.5 * theory.PivotInertia * omega * omega, system.KineticEnergy(state.Values), 14);
     }
 
     [Fact]
     public void SmallAmplitudePeriodMatchesClosedForm()
     {
-        var pendulum = PendulumScenario.CreatePendulum();
+        var theory = PendulumScenario.CreateTheory();
 
-        var period = MeasurePeriod(pendulum, amplitude: 1e-3, dt: 1e-4, periods: 5);
+        var period = MeasurePeriod(amplitude: 1e-3, dt: 1e-4, periods: 5);
 
         // Finite-amplitude correction at 1e-3 rad is ≈ θ₀²/16 ≈ 6e-8 relative.
-        Assert.Equal(pendulum.SmallAmplitudePeriod, period, pendulum.SmallAmplitudePeriod * 1e-6);
+        Assert.Equal(theory.SmallAmplitudePeriod, period, theory.SmallAmplitudePeriod * 1e-6);
     }
 
     [Theory]
@@ -121,30 +161,11 @@ public class PendulumTests
     [InlineData(2.5)]
     public void LargeAmplitudePeriodMatchesEllipticIntegral(double amplitude)
     {
-        var pendulum = PendulumScenario.CreatePendulum();
+        var theory = PendulumScenario.CreateTheory();
 
-        var period = MeasurePeriod(pendulum, amplitude, dt: 1e-4, periods: 3);
+        var period = MeasurePeriod(amplitude, dt: 1e-4, periods: 3);
 
-        Assert.Equal(pendulum.ExactPeriod(amplitude), period, pendulum.ExactPeriod(amplitude) * 1e-9);
-    }
-
-    [Fact]
-    public void ReconstructedFullStateKeepsPinPointFixed()
-    {
-        var pendulum = PendulumScenario.CreatePendulum();
-        var system = new PlanarSystem([pendulum.Link], pendulum.Gravity);
-        var full = new double[system.StateLength];
-        const double omega = 1.7;
-
-        pendulum.WriteFullState(system, [0.4, omega], full);
-        var pose = system.GetPose(full, 0);
-        var twist = system.GetTwist(full, 0);
-        var pinWorld = pose.ToWorld(pendulum.Link.EndA);
-        var pinVelocity = twist.VelocityOfPoint(pose.RotateToWorld(pendulum.Link.EndA));
-
-        Assert.Equal(0.0, pinWorld.Length, 15);
-        Assert.Equal(0.0, pinVelocity.Length, 15);
-        Assert.Equal(0.5 * pendulum.PivotInertia * omega * omega, system.KineticEnergy(full), 14);
+        Assert.Equal(theory.ExactPeriod(amplitude), period, theory.ExactPeriod(amplitude) * 1e-9);
     }
 
     [Fact]
@@ -157,17 +178,20 @@ public class PendulumTests
 
     /// <summary>
     /// Test 5 on the nonlinear pendulum, where no closed-form trajectory is
-    /// used: successive differences under dt halving shrink by ≈ 16.
+    /// used: successive differences under dt halving shrink by ≈ 16. Run
+    /// through the pin constraint, so it also shows the constraint solve
+    /// keeps RK4 at fourth order.
     /// </summary>
     [Fact]
     public void PendulumTrajectoryConvergesAtFourthOrder()
     {
-        var pendulum = PendulumScenario.CreatePendulum();
+        var theory = PendulumScenario.CreateTheory();
         double ThetaAt(double dt)
         {
-            var state = new SystemState([pendulum.HangingAngle + 1.0, 0.0]);
-            FixedStepRunner.Run(state, new Rk4Integrator(), pendulum.Evaluate, dt, (long)Math.Round(2.0 / dt));
-            return state.Values[0];
+            var system = PendulumScenario.CreateSystem();
+            var state = PendulumScenario.CreateState(system, theory, theory.HangingAngle + 1.0, 0.0);
+            FixedStepRunner.Run(state, new Rk4Integrator(), system.Evaluate, dt, (long)Math.Round(2.0 / dt));
+            return system.GetPose(state.Values, 0).Angle;
         }
 
         double[] theta = [ThetaAt(0.02), ThetaAt(0.01), ThetaAt(0.005), ThetaAt(0.0025)];

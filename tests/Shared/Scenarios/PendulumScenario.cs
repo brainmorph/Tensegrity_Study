@@ -1,4 +1,5 @@
 using Tensegrity.Core.Bodies;
+using Tensegrity.Core.Elements;
 using Tensegrity.Core.Integration;
 using Tensegrity.Core.Mathematics;
 using Tensegrity.Core.Systems;
@@ -6,31 +7,28 @@ using Tensegrity.Core.Systems;
 namespace Tensegrity.Testing.Scenarios;
 
 /// <summary>
-/// A link pinned to the ground at its <see cref="PlanarLink.EndA"/>, in
-/// reduced coordinates: state is [θ, θ̇], where θ is the link angle.
-///
-/// TEST-SIDE STAND-IN until M2. Pin constraints (Lagrange multipliers) are
-/// M2 work, so in M1 the pendulum is integrated in its single angle using
-/// the Core RK4 and the Core link inertia. <see cref="WriteFullState"/>
-/// reconstructs the maximal-coordinate state so the M2 pinned version can be
-/// checked against the same baseline.
-///
-/// Equation of motion: I_pivot·θ̈ = r × (m·g), r = R(θ)·(−EndA) the center of
-/// mass offset from the pivot.
+/// Closed-form results for a rigid link swinging about a fixed pivot at a
+/// body-fixed point. Formulas only: the dynamics are simulated by
+/// <see cref="PlanarSystem"/> with a real pin.
 /// </summary>
-public sealed class ReducedPendulum
+public sealed class PendulumTheory
 {
-    public ReducedPendulum(PlanarLink link, Vector2d pivot, Vector2d gravity)
+    public PendulumTheory(PlanarLink link, Vector2d pivotLocal, Vector2d pivot, Vector2d gravity)
     {
         Link = link;
+        PivotLocal = pivotLocal;
         Pivot = pivot;
         Gravity = gravity;
-        PivotInertia = link.MomentOfInertiaAbout(link.EndA);
-        PivotToCenter = -link.EndA;
+        PivotInertia = link.MomentOfInertiaAbout(pivotLocal);
+        PivotToCenter = -pivotLocal;
     }
 
     public PlanarLink Link { get; }
 
+    /// <summary>Body-frame point that is pinned.</summary>
+    public Vector2d PivotLocal { get; }
+
+    /// <summary>World position of the pivot.</summary>
     public Vector2d Pivot { get; }
 
     public Vector2d Gravity { get; }
@@ -59,20 +57,14 @@ public sealed class ReducedPendulum
         4 * Math.Sqrt(PivotInertia / (Link.Mass * Gravity.Length * Distance))
         * CompleteEllipticK(Math.Sin(0.5 * amplitude));
 
-    public void Evaluate(double time, ReadOnlySpan<double> state, Span<double> derivative)
+    /// <summary>
+    /// Pose and twist of the link at angle <paramref name="theta"/> and rate
+    /// <paramref name="omega"/>, with the pinned point exactly at the pivot.
+    /// </summary>
+    public (Pose2d Pose, Twist2d Twist) StateAt(double theta, double omega)
     {
-        var r = PivotToCenter.Rotated(state[0]);
-        derivative[0] = state[1];
-        derivative[1] = Vector2d.Cross(r, Link.Mass * Gravity) / PivotInertia;
-    }
-
-    /// <summary>Writes the equivalent maximal-coordinate state into a one-body <paramref name="system"/>.</summary>
-    public void WriteFullState(PlanarSystem system, ReadOnlySpan<double> reduced, Span<double> full)
-    {
-        var theta = reduced[0];
-        var omega = reduced[1];
         var r = PivotToCenter.Rotated(theta);
-        system.SetBody(full, 0, new Pose2d(Pivot + r, theta), new Twist2d(Vector2d.Cross(omega, r), omega));
+        return (new Pose2d(Pivot + r, theta), new Twist2d(Vector2d.Cross(omega, r), omega));
     }
 
     /// <summary>K(k) by the arithmetic–geometric mean: K = π / (2·AGM(1, √(1 − k²))).</summary>
@@ -98,6 +90,10 @@ public sealed class ReducedPendulum
 /// Test 3 (PLAN.md section 7) reference run: a 1 m, 1 kg slender bar pinned at
 /// one end, released from rest 1 rad from hanging. Large amplitude on purpose,
 /// so the nonlinear term matters and any change in the dynamics shows.
+///
+/// Simulated in maximal coordinates with a Lagrange-multiplier pin to the
+/// ground. The baseline was recorded in M1 with a reduced one-angle model;
+/// this pinned run must reproduce it unchanged.
 /// </summary>
 public sealed class PendulumScenario : IReferenceScenario
 {
@@ -109,29 +105,50 @@ public sealed class PendulumScenario : IReferenceScenario
     public string Name => "pendulum";
 
     public string Description =>
-        "Slender bar (1 kg, 1 m) pinned at one end to the origin, released from rest 1 rad from hanging, standard gravity. Reduced-coordinate stand-in until M2 pins. RK4, dt 1e-4 s, 2 s, sampled every 0.2 s.";
+        "Slender bar (1 kg, 1 m) pinned at one end to the origin, released from rest 1 rad from hanging, standard gravity. Lagrange-multiplier pin in maximal coordinates (M1 baseline from a reduced one-angle model). RK4, dt 1e-4 s, 2 s, sampled every 0.2 s.";
 
     public static PlanarLink CreateLink() => PlanarLink.SlenderBar("bar", mass: 1.0, length: 1.0);
 
-    public static ReducedPendulum CreatePendulum() => new(CreateLink(), Vector2d.Zero, PlanarSystem.StandardGravity);
+    public static PendulumTheory CreateTheory()
+    {
+        var link = CreateLink();
+        return new PendulumTheory(link, link.EndA, Vector2d.Zero, PlanarSystem.StandardGravity);
+    }
+
+    /// <summary>
+    /// The bar pinned to the ground at its end A, at the origin. The bar is
+    /// the pin's end A, so the pin reaction is the force on the bar.
+    /// </summary>
+    public static PlanarSystem CreateSystem(ConstraintStabilization? stabilization = null)
+    {
+        var link = CreateLink();
+        var pivot = new PinJoint("pivot", Attachment.OnLink(link.Id, link.EndA), Attachment.Ground(Vector2d.Zero));
+        return new PlanarSystem([link], PlanarSystem.StandardGravity, [pivot], stabilization);
+    }
+
+    /// <summary>State with the bar at <paramref name="theta"/>, turning at <paramref name="omega"/>, pin satisfied.</summary>
+    public static SystemState CreateState(PlanarSystem system, PendulumTheory theory, double theta, double omega)
+    {
+        var state = system.CreateState();
+        var (pose, twist) = theory.StateAt(theta, omega);
+        system.SetBody(state.Values, 0, pose, twist);
+        return state;
+    }
 
     public IReadOnlyDictionary<string, double[]> Run()
     {
-        var pendulum = CreatePendulum();
-        var system = new PlanarSystem([pendulum.Link], pendulum.Gravity);
-        var full = new double[system.StateLength];
-        var state = new SystemState([pendulum.HangingAngle + Amplitude, 0.0]);
+        var theory = CreateTheory();
+        var system = CreateSystem();
+        var state = CreateState(system, theory, theory.HangingAngle + Amplitude, 0.0);
         var recorder = new SampleRecorder();
 
-        pendulum.WriteFullState(system, state.Values, full);
-        var initialEnergy = system.KineticEnergy(full) + system.GravitationalPotentialEnergy(full);
+        var initialEnergy = system.KineticEnergy(state.Values) + system.GravitationalPotentialEnergy(state.Values);
         var maxDrift = 0.0;
 
-        FixedStepRunner.Run(state, new Rk4Integrator(), pendulum.Evaluate, Dt, Steps, (step, s) =>
+        FixedStepRunner.Run(state, new Rk4Integrator(), system.Evaluate, Dt, Steps, (step, s) =>
         {
-            pendulum.WriteFullState(system, s.Values, full);
-            var kinetic = system.KineticEnergy(full);
-            var potential = system.GravitationalPotentialEnergy(full);
+            var kinetic = system.KineticEnergy(s.Values);
+            var potential = system.GravitationalPotentialEnergy(s.Values);
             maxDrift = Math.Max(maxDrift, Math.Abs(kinetic + potential - initialEnergy));
 
             if (step % Stride != 0)
@@ -139,12 +156,12 @@ public sealed class PendulumScenario : IReferenceScenario
                 return;
             }
 
-            var pose = system.GetPose(full, 0);
+            var pose = system.GetPose(s.Values, 0);
             recorder.Add("time", s.Time);
             recorder.Add("x", pose.Position.X);
             recorder.Add("y", pose.Position.Y);
             recorder.Add("theta", pose.Angle);
-            recorder.Add("omega", system.GetTwist(full, 0).Angular);
+            recorder.Add("omega", system.GetTwist(s.Values, 0).Angular);
             recorder.Add("kinetic_energy", kinetic);
             recorder.Add("potential_energy", potential);
         });

@@ -1,4 +1,5 @@
 using Tensegrity.Core.Bodies;
+using Tensegrity.Core.Elements;
 using Tensegrity.Core.Mathematics;
 using Tensegrity.Core.Systems;
 
@@ -79,5 +80,38 @@ public class PlanarSystemTests
         Assert.Throws<ArgumentException>(() => new PlanarSystem([a, PlanarLink.SlenderBar("a", 2, 2)], Vector2d.Zero));
         Assert.Throws<ArgumentOutOfRangeException>(() => new PlanarSystem([a], new Vector2d(double.NaN, 0)));
         Assert.Throws<ArgumentOutOfRangeException>(() => TwoBodies().GetPose(new double[12], 2));
+    }
+
+    [Fact]
+    public void RejectsBadPins()
+    {
+        var a = PlanarLink.SlenderBar("a", 1.0, 1.0);
+        var ground = Attachment.Ground(Vector2d.Zero);
+        var onA = Attachment.OnLink("a", a.EndA);
+
+        Assert.Throws<ArgumentException>(() => new PinJoint("p", ground, ground));
+        Assert.Throws<ArgumentException>(() => new PinJoint("p", onA, Attachment.OnLink("a", a.EndB)));
+        Assert.Throws<ArgumentException>(
+            () => new PlanarSystem([a], Vector2d.Zero, [new PinJoint("p", Attachment.OnLink("missing", Vector2d.Zero), ground)]));
+        Assert.Throws<ArgumentException>(
+            () => new PlanarSystem([a], Vector2d.Zero, [new PinJoint("p", onA, ground), new PinJoint("p", onA, ground)]));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ConstraintStabilization(-1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Attachment.Ground(new Vector2d(double.NaN, 0)));
+    }
+
+    [Fact]
+    public void WorldPointAndVelocityFollowTheBody()
+    {
+        var system = TwoBodies();
+        var state = system.CreateState();
+        system.SetBody(state.Values, 0, new Pose2d(new Vector2d(1, 2), Math.PI / 2), new Twist2d(new Vector2d(3, 0), 2));
+        var end = Attachment.OnLink("a", new Vector2d(0.5, 0));
+
+        // Local (0.5, 0) rotated 90° is (0, 0.5); its velocity adds ω × r = 2·(−0.5, 0).
+        Assert.Equal(1.0, system.WorldPoint(state.Values, end).X, 15);
+        Assert.Equal(2.5, system.WorldPoint(state.Values, end).Y, 15);
+        Assert.Equal(2.0, system.PointVelocity(state.Values, end).X, 15);
+        Assert.Equal(0.0, system.PointVelocity(state.Values, end).Y, 15);
+        Assert.Equal(new Vector2d(7, 8), system.WorldPoint(state.Values, Attachment.Ground(new Vector2d(7, 8))));
     }
 }
