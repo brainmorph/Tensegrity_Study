@@ -486,7 +486,7 @@ public sealed class PlanarSystem : ISwitchedSystem
         return total;
     }
 
-    /// <summary>Energy dissipated by cable damping since the start of the run, J.</summary>
+    /// <summary>Energy dissipated by cable damping and joint friction since the start of the run, J.</summary>
     public double DissipatedEnergy(ReadOnlySpan<double> state)
     {
         CheckLength(state.Length);
@@ -562,6 +562,17 @@ public sealed class PlanarSystem : ISwitchedSystem
             var p = actuatorPin[a];
             AddTorque(pinA[p], torque);
             AddTorque(pinB[p], -torque);
+        }
+
+        for (var p = 0; p < pins.Length; p++)
+        {
+            var friction = pins[p].Friction;
+            if (friction > 0)
+            {
+                var torque = friction * RelativeRate(state, p);
+                AddTorque(pinA[p], -torque);
+                AddTorque(pinB[p], torque);
+            }
         }
 
         if (pins.Length > 0)
@@ -702,7 +713,7 @@ public sealed class PlanarSystem : ISwitchedSystem
         for (var a = 0; a < actuators.Length; a++)
         {
             var p = actuatorPin[a];
-            total += ActuatorTorque(a, time, useLatchedModes) * (AngularRate(state, pinA[p]) - AngularRate(state, pinB[p]));
+            total += ActuatorTorque(a, time, useLatchedModes) * RelativeRate(state, p);
         }
 
         return total;
@@ -710,6 +721,10 @@ public sealed class PlanarSystem : ISwitchedSystem
 
     private double AngularRate(ReadOnlySpan<double> state, ResolvedPoint point) =>
         point.Body == Ground ? 0.0 : state[CoordinateCount + (DofPerBody * point.Body) + 2];
+
+    /// <summary>Relative rate ω_A − ω_B across pin <paramref name="pin"/>, rad/s.</summary>
+    private double RelativeRate(ReadOnlySpan<double> state, int pin) =>
+        AngularRate(state, pinA[pin]) - AngularRate(state, pinB[pin]);
 
     /// <summary>Cable length L, rate L̇ and unit direction from end A to end B.</summary>
     private (double Length, double Rate, Vector2d Direction) CableGeometry(ReadOnlySpan<double> state, int cable)
@@ -727,10 +742,11 @@ public sealed class PlanarSystem : ISwitchedSystem
     }
 
     /// <summary>
-    /// Rate of energy loss in the cable dampers in the latched modes, W.
-    /// Power into a cable is T·L̇ and its stored energy changes at k·Δ·L̇, so
-    /// the damper takes (T − k·Δ)·L̇: c·L̇² when taut, −k·Δ·L̇ when recoiling
-    /// (positive, since then L̇ &lt; −k·Δ/c &lt; 0), and nothing when slack.
+    /// Rate of energy loss in the cable dampers in the latched modes and in
+    /// joint friction, W. Power into a cable is T·L̇ and its stored energy
+    /// changes at k·Δ·L̇, so the damper takes (T − k·Δ)·L̇: c·L̇² when taut,
+    /// −k·Δ·L̇ when recoiling (positive, since then L̇ &lt; −k·Δ/c &lt; 0),
+    /// and nothing when slack. A pin with friction c takes c·Δω².
     /// </summary>
     private double DissipatedPower(ReadOnlySpan<double> state)
     {
@@ -746,6 +762,16 @@ public sealed class PlanarSystem : ISwitchedSystem
                 CableMode.Recoiling => -cable.Stiffness * stretch * rate,
                 _ => 0.0,
             };
+        }
+
+        for (var p = 0; p < pins.Length; p++)
+        {
+            var friction = pins[p].Friction;
+            if (friction > 0)
+            {
+                var rate = RelativeRate(state, p);
+                total += friction * rate * rate;
+            }
         }
 
         return total;
