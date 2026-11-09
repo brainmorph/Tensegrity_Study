@@ -112,7 +112,7 @@ public sealed class PlanarSystem : ISwitchedSystem
 
         this.actuators = actuators?.ToArray() ?? [];
         RequireUniqueIds(this.actuators.Select(a => a.Id), "actuator", nameof(actuators));
-        actuatorPin = this.actuators.Select(ResolvePin).ToArray();
+        actuatorPin = this.actuators.Select(a => ResolvePin(a.PinId, $"actuator '{a.Id}'")).ToArray();
         var doubled = actuatorPin.GroupBy(p => p).FirstOrDefault(g => g.Count() > 1);
         if (doubled is not null)
         {
@@ -315,6 +315,124 @@ public sealed class PlanarSystem : ISwitchedSystem
             var section = (halfMass * quarterAcceleration) - halfForce[b] - (halfMass * Gravity);
             compressions[b] = Vector2d.Dot(section, axis);
         }
+    }
+
+    /// <summary>
+    /// The joint torques at <paramref name="pinIds"/> that hold this state
+    /// still: test 11's effort measure (PLAN.md 7). Applied loads are taken
+    /// at <paramref name="time"/> with the physical cable law, and include
+    /// any actuators the system already has.
+    ///
+    /// The constrained acceleration is affine in the added torques,
+    /// q̈ = q̈₀ + G·τ, where column j of G is the response to a unit couple
+    /// at pin j (found with the same constraint solve as the dynamics). The
+    /// torques minimize ½·q̈ᵀ·M·q̈, the kinetic-energy measure of the
+    /// leftover acceleration, by the normal equations
+    /// <code>
+    /// (Gᵀ·M·G)·τ = −Gᵀ·M·q̈₀
+    /// </code>
+    /// When the pins can hold the state the minimum is zero and the torques
+    /// are exact; otherwise the leftover acceleration is reported. Meant for
+    /// a state at rest, where q̈ = 0 means the structure stays put; with
+    /// velocities it also cancels the velocity terms for that instant.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// A pin's torque moves nothing (the structure is rigid there), or the
+    /// pins are redundant: more than one set of torques gives the same
+    /// acceleration, so there is no single answer.
+    /// </exception>
+    public HoldingTorques SolveHoldingTorques(double time, ReadOnlySpan<double> state, IReadOnlyList<string> pinIds)
+    {
+        CheckLength(state.Length);
+        ArgumentNullException.ThrowIfNull(pinIds);
+        RequireUniqueIds(pinIds, "pin", nameof(pinIds));
+        var joints = pinIds.Select(id => ResolvePin(id, "holding torque")).ToArray();
+        var n = CoordinateCount;
+        var m = joints.Length;
+
+        ComputeTotalForces(time, state, useLatchedModes: false);
+        var baseline = new double[n];
+        for (var k = 0; k < n; k++)
+        {
+            baseline[k] = forces[k] * InverseMass(k);
+        }
+
+        // Column j of G, stored as row j: the acceleration from a unit couple at pin j.
+        var response = new double[m * n];
+        for (var j = 0; j < m; j++)
+        {
+            var column = response.AsSpan(j * n, n);
+            AddUnitCouple(column, pinA[joints[j]], 1.0);
+            AddUnitCouple(column, pinB[joints[j]], -1.0);
+            ConstrainedAcceleration(column);
+        }
+
+        var normal = new double[m * m];
+        var torques = new double[m];
+        for (var i = 0; i < m; i++)
+        {
+            var gi = response.AsSpan(i * n, n);
+            for (var k = 0; k < n; k++)
+            {
+                torques[i] -= gi[k] * Mass(k) * baseline[k];
+            }
+
+            for (var j = 0; j <= i; j++)
+            {
+                var gj = response.AsSpan(j * n, n);
+                var sum = 0.0;
+                for (var k = 0; k < n; k++)
+                {
+                    sum += gi[k] * Mass(k) * gj[k];
+                }
+
+                normal[(i * m) + j] = sum;
+            }
+        }
+
+        // A couple whose response is round-off next to an unconstrained
+        // body's (Σ 1/I over the bodies it acts on) does nothing: the joint
+        // is locked by the pins themselves, as in a rigid triangle.
+        for (var j = 0; j < m; j++)
+        {
+            var free = UnconstrainedCoupleResponse(pinA[joints[j]]) + UnconstrainedCoupleResponse(pinB[joints[j]]);
+            if (!(normal[(j * m) + j] > 1e-12 * free))
+            {
+                throw new InvalidOperationException(
+                    $"A torque at pin '{pinIds[j]}' cannot move anything at this state, so it has no holding torque.");
+            }
+        }
+
+        if (m > 0)
+        {
+            if (!DenseCholesky.TryFactor(normal, m))
+            {
+                throw new InvalidOperationException(
+                    $"The pins {string.Join(", ", pinIds)} are redundant at this state: their torques cannot be told apart.");
+            }
+
+            DenseCholesky.Solve(normal, m, torques);
+        }
+
+        double maxLinear = 0, maxAngular = 0;
+        Span<double> a = stackalloc double[DofPerBody];
+        for (var b = 0; b < links.Length; b++)
+        {
+            for (var d = 0; d < DofPerBody; d++)
+            {
+                var k = (DofPerBody * b) + d;
+                a[d] = baseline[k];
+                for (var j = 0; j < m; j++)
+                {
+                    a[d] += response[(j * n) + k] * torques[j];
+                }
+            }
+
+            maxLinear = Math.Max(maxLinear, Math.Sqrt((a[0] * a[0]) + (a[1] * a[1])));
+            maxAngular = Math.Max(maxAngular, Math.Abs(a[2]));
+        }
+
+        return new HoldingTorques(pinIds.ToArray(), torques, maxLinear, maxAngular);
     }
 
     /// <summary>Largest pin position error |C| over all pins, m. Zero with no pins.</summary>
@@ -691,6 +809,60 @@ public sealed class PlanarSystem : ISwitchedSystem
         forces[i + 2] += Vector2d.Cross(r, force);
     }
 
+    private double UnconstrainedCoupleResponse(ResolvedPoint point) =>
+        point.Body == Ground ? 0.0 : 1.0 / links[point.Body].MomentOfInertia;
+
+    private static void AddUnitCouple(Span<double> generalized, ResolvedPoint point, double sign)
+    {
+        if (point.Body != Ground)
+        {
+            generalized[(DofPerBody * point.Body) + 2] += sign;
+        }
+    }
+
+    /// <summary>
+    /// Replaces the generalized force <paramref name="load"/> with the
+    /// acceleration it causes once the pins react: M⁻¹·(f + Jᵀ·μ) with
+    /// (J·M⁻¹·Jᵀ)·μ = −J·M⁻¹·f. Linear in f, with no stabilization terms.
+    /// Uses the Jacobian and factor left by the last
+    /// <see cref="ComputeTotalForces"/>, which must have run at this state.
+    /// </summary>
+    private void ConstrainedAcceleration(Span<double> load)
+    {
+        var rows = ConstraintCount;
+        var cols = CoordinateCount;
+        if (rows > 0)
+        {
+            Span<double> mu = rows <= 64 ? stackalloc double[rows] : new double[rows];
+            for (var r = 0; r < rows; r++)
+            {
+                var jr = jacobian.AsSpan(r * cols, cols);
+                var sum = 0.0;
+                for (var k = 0; k < cols; k++)
+                {
+                    sum += jr[k] * InverseMass(k) * load[k];
+                }
+
+                mu[r] = -sum;
+            }
+
+            DenseCholesky.Solve(constraintMatrix, rows, mu);
+            for (var r = 0; r < rows; r++)
+            {
+                var jr = jacobian.AsSpan(r * cols, cols);
+                for (var k = 0; k < cols; k++)
+                {
+                    load[k] += jr[k] * mu[r];
+                }
+            }
+        }
+
+        for (var k = 0; k < cols; k++)
+        {
+            load[k] *= InverseMass(k);
+        }
+    }
+
     /// <summary>Adds a pure torque to the body a point belongs to; the ground takes none.</summary>
     private void AddTorque(ResolvedPoint point, double torque)
     {
@@ -789,6 +961,12 @@ public sealed class PlanarSystem : ISwitchedSystem
         return cables[cable].ModeAt(length, rate);
     }
 
+    private double Mass(int coordinate)
+    {
+        var link = links[coordinate / DofPerBody];
+        return coordinate % DofPerBody == 2 ? link.MomentOfInertia : link.Mass;
+    }
+
     private double InverseMass(int coordinate)
     {
         var link = links[coordinate / DofPerBody];
@@ -827,17 +1005,17 @@ public sealed class PlanarSystem : ISwitchedSystem
         throw new ArgumentException($"The {owner} refers to unknown link '{attachment.LinkId}'.");
     }
 
-    private int ResolvePin(JointActuator actuator)
+    private int ResolvePin(string pinId, string owner)
     {
         for (var p = 0; p < pins.Length; p++)
         {
-            if (string.Equals(pins[p].Id, actuator.PinId, StringComparison.Ordinal))
+            if (string.Equals(pins[p].Id, pinId, StringComparison.Ordinal))
             {
                 return p;
             }
         }
 
-        throw new ArgumentException($"Actuator '{actuator.Id}' refers to unknown pin '{actuator.PinId}'.");
+        throw new ArgumentException($"The {owner} refers to unknown pin '{pinId}'.");
     }
 
     private static void RequireUniqueIds(IEnumerable<string> ids, string kind, string paramName)
