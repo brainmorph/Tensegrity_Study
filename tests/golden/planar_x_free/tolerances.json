@@ -1,0 +1,28 @@
+{
+  // Hand-written (PLAN.md 7a). State is float64 and the run is
+  // deterministic, so poses use 1e-10: tight enough to catch any change in
+  // cables or the integrator, loose enough for operation reordering.
+  "time": { "absolute": 1e-12, "relative": 0 },
+  "s1_x": { "absolute": 1e-10, "relative": 0 },
+  "s1_y": { "absolute": 1e-10, "relative": 0 },
+  "s1_theta": { "absolute": 1e-10, "relative": 0 },
+  "s2_x": { "absolute": 1e-10, "relative": 0 },
+  "s2_y": { "absolute": 1e-10, "relative": 0 },
+  "s2_theta": { "absolute": 1e-10, "relative": 0 },
+  // Cable stiffness k = EA/L0 is 5000-8333 N/m, so a 1e-10 m change in
+  // geometry moves tensions by up to ~1e-6 N.
+  "tension_bottom": { "absolute": 1e-6, "relative": 1e-9 },
+  "tension_top": { "absolute": 1e-6, "relative": 1e-9 },
+  "tension_left": { "absolute": 1e-6, "relative": 1e-9 },
+  "tension_right": { "absolute": 1e-6, "relative": 1e-9 },
+  "kinetic_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  // No gravity: potential energy is exactly zero.
+  "potential_energy": { "absolute": 0, "relative": 0 },
+  "elastic_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "dissipated_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  // Worst |E_total(t) - E_total(0)|, J. Measured 3.2e-10 at dt = 1e-4
+  // (RK4 error from the stiff cable modes; falls 12.8x per dt halving).
+  "max_energy_balance_error": { "absolute": 2e-9, "relative": 0 },
+  "event_count": { "absolute": 0, "relative": 0 },
+  "unresolved_steps": { "absolute": 0, "relative": 0 }
+}

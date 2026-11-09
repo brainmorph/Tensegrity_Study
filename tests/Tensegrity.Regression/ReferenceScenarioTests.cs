@@ -22,6 +22,8 @@ public class ReferenceScenarioTests
 
         // M2
         new CableOscillatorScenario(),
+        new PlanarXScenario(),
+        new PlanarXFreeScenario(),
     ];
 
     public static TheoryData<string> All() => new(Scenarios.Select(s => s.Name));
