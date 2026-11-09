@@ -2,7 +2,8 @@
   <!--
     The Godot visualizer. Rendering only (PLAN.md section 1a, constraint 5):
     its single project reference is the read-only run format, so it cannot
-    reach solver code. tests/Tensegrity.Core.Tests/Visualizer enforces this.
+    reach solver code. The isolation test (PLAN.md section 7, test 15)
+    enforces this.
   -->
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
