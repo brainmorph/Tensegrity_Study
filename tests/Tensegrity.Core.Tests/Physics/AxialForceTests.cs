@@ -15,7 +15,7 @@ public class AxialForceTests
     private static double[] Compressions(PlanarSystem system, ReadOnlySpan<double> state)
     {
         var values = new double[system.BodyCount];
-        system.GetMidpointCompressions(state, values);
+        system.GetMidpointCompressions(0, state, values);
         return values;
     }
 

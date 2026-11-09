@@ -11,12 +11,13 @@ public class PlanarSystemTests
         new([PlanarLink.SlenderBar("a", 1.0, 1.0), PlanarLink.SlenderBar("b", 2.0, 0.5)], PlanarSystem.StandardGravity);
 
     [Fact]
-    public void StateLayoutIsPositionsThenVelocitiesThenDissipatedEnergy()
+    public void StateLayoutIsPositionsThenVelocitiesThenDissipatedEnergyThenActuatorWork()
     {
         var system = TwoBodies();
 
-        Assert.Equal(13, system.StateLength);
+        Assert.Equal(14, system.StateLength);
         Assert.Equal(12, system.DissipatedEnergyIndex);
+        Assert.Equal(13, system.ActuatorWorkIndex);
         Assert.Equal(0, system.PositionIndex(0));
         Assert.Equal(3, system.PositionIndex(1));
         Assert.Equal(6, system.VelocityIndex(0));
@@ -51,6 +52,7 @@ public class PlanarSystemTests
         Assert.Equal([0, 0, 0, 7, 8, 9], dy[..6]);
         Assert.Equal([0, -9.81, 0, 0, -9.81, 0], dy[6..12]);
         Assert.Equal(0.0, dy[12]); // Nothing dissipates without cables.
+        Assert.Equal(0.0, dy[13]); // No actuators, no work.
     }
 
     [Fact]
@@ -81,7 +83,7 @@ public class PlanarSystemTests
         Assert.Throws<ArgumentException>(() => new PlanarSystem([], Vector2d.Zero));
         Assert.Throws<ArgumentException>(() => new PlanarSystem([a, PlanarLink.SlenderBar("a", 2, 2)], Vector2d.Zero));
         Assert.Throws<ArgumentOutOfRangeException>(() => new PlanarSystem([a], new Vector2d(double.NaN, 0)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => TwoBodies().GetPose(new double[13], 2));
+        Assert.Throws<ArgumentOutOfRangeException>(() => TwoBodies().GetPose(new double[TwoBodies().StateLength], 2));
     }
 
     [Fact]

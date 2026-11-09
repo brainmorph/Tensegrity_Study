@@ -104,7 +104,7 @@ public class PendulumTests
         var reaction = new Vector2d[1];
 
         system.Evaluate(0, state.Values, dy);
-        system.GetPinReactions(state.Values, reaction);
+        system.GetPinReactions(state.Time, state.Values, reaction);
 
         // −π/2 is not representable, so cos(θ) ≈ 6.1e-17 and the residual
         // accelerations sit at the 1e-15 level rather than exactly zero.
@@ -122,7 +122,7 @@ public class PendulumTests
         var state = PendulumScenario.CreateState(system, theory, theory.HangingAngle, omega);
         var reaction = new Vector2d[1];
 
-        system.GetPinReactions(state.Values, reaction);
+        system.GetPinReactions(state.Time, state.Values, reaction);
 
         // Hanging straight down, gravity has no moment, so θ̈ = 0 and the pin
         // supplies weight plus centripetal force: m·(g + ω²·d), straight up.

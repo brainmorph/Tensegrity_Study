@@ -80,7 +80,7 @@ public sealed class RunRecorderTests : IDisposable
                 Assert.Equal((float)system.WorldPoint(s.Values, cable.B).Y, run.Value(frame, FrameChannels.CableBy(cable.Id)));
             }
 
-            system.GetPinReactions(s.Values, reactions);
+            system.GetPinReactions(s.Time, s.Values, reactions);
             for (var p = 0; p < reactions.Length; p++)
             {
                 var pin = system.Pins[p];

@@ -9,16 +9,17 @@ namespace Tensegrity.Core.Systems;
 /// A set of planar rigid links under uniform gravity, joined by pin
 /// constraints and cables, in maximal coordinates.
 ///
-/// State layout for n bodies (length 6n + 1), positions first, then
-/// velocities, then the energy dissipated so far:
+/// State layout for n bodies (length 6n + 2), positions first, then
+/// velocities, then the energy dissipated so far and the work done by the
+/// joint actuators so far:
 /// <code>
-/// [ x0 y0 θ0  x1 y1 θ1 … | ẋ0 ẏ0 θ̇0  ẋ1 ẏ1 θ̇1 … | E_diss ]
+/// [ x0 y0 θ0  x1 y1 θ1 … | ẋ0 ẏ0 θ̇0  ẋ1 ẏ1 θ̇1 … | E_diss  W_act ]
 /// </code>
 /// Splitting positions from velocities keeps the generalized-coordinate block
-/// contiguous for the constraint solver. E_diss is integrated with the rest
-/// of the state, so the energy balance (PLAN.md 4.3)
+/// contiguous for the constraint solver. E_diss and W_act are integrated with
+/// the rest of the state, so the energy balance (PLAN.md 4.3)
 /// <code>
-/// kinetic + gravitational + elastic + dissipated = constant
+/// kinetic + gravitational + elastic + dissipated − actuator work = constant
 /// </code>
 /// holds to integrator accuracy; see <see cref="TotalEnergy"/>.
 ///
@@ -31,13 +32,16 @@ namespace Tensegrity.Core.Systems;
 /// F the applied forces and ω the <see cref="ConstraintStabilization"/>
 /// frequency; then q̈ = M⁻¹·(F + Jᵀ·λ).
 ///
-/// Cables switch between slack, taut and recoiling (see <see cref="Cable"/>).
-/// As an <see cref="ISwitchedSystem"/>, <see cref="Evaluate"/> uses each
-/// cable's latched mode, so a system with cables must be stepped by an
+/// Cables switch between slack, taut and recoiling (see <see cref="Cable"/>),
+/// and actuator schedules between their linear segments (see
+/// <see cref="TorqueSchedule"/>). As an <see cref="ISwitchedSystem"/>,
+/// <see cref="Evaluate"/> uses each cable's and schedule's latched mode, so a
+/// system with cables or non-constant schedules must be stepped by an
 /// <see cref="EventSplittingStepper"/> (or have its modes latched by hand).
-/// Diagnostics such as <see cref="GetCableTensions"/> and
-/// <see cref="GetPinReactions"/> always use the physical cable law at the
-/// given state, independent of the latch.
+/// Diagnostics such as <see cref="GetCableTensions"/>,
+/// <see cref="GetActuatorTorques"/> and <see cref="GetPinReactions"/> always
+/// use the physical laws at the given time and state, independent of the
+/// latch.
 ///
 /// Instances keep scratch buffers between calls, so one instance must not be
 /// evaluated from several threads at once.
@@ -59,6 +63,9 @@ public sealed class PlanarSystem : ISwitchedSystem
     private readonly ResolvedPoint[] cableA;
     private readonly ResolvedPoint[] cableB;
     private readonly CableMode[] latchedModes;
+    private readonly JointActuator[] actuators;
+    private readonly int[] actuatorPin;
+    private readonly int[] latchedSegments;
     private bool modesLatched;
 
     // Scratch for the constraint solve, sized once.
@@ -72,7 +79,8 @@ public sealed class PlanarSystem : ISwitchedSystem
         Vector2d gravity,
         IEnumerable<PinJoint>? pins = null,
         IEnumerable<Cable>? cables = null,
-        ConstraintStabilization? stabilization = null)
+        ConstraintStabilization? stabilization = null,
+        IEnumerable<JointActuator>? actuators = null)
     {
         ArgumentNullException.ThrowIfNull(links);
         this.links = links.ToArray();
@@ -101,7 +109,20 @@ public sealed class PlanarSystem : ISwitchedSystem
         cableA = this.cables.Select(c => Resolve(c.A, $"cable '{c.Id}'")).ToArray();
         cableB = this.cables.Select(c => Resolve(c.B, $"cable '{c.Id}'")).ToArray();
         latchedModes = new CableMode[this.cables.Length];
-        modesLatched = this.cables.Length == 0;
+
+        this.actuators = actuators?.ToArray() ?? [];
+        RequireUniqueIds(this.actuators.Select(a => a.Id), "actuator", nameof(actuators));
+        actuatorPin = this.actuators.Select(ResolvePin).ToArray();
+        var doubled = actuatorPin.GroupBy(p => p).FirstOrDefault(g => g.Count() > 1);
+        if (doubled is not null)
+        {
+            throw new ArgumentException($"Pin '{this.pins[doubled.Key].Id}' has more than one actuator.", nameof(actuators));
+        }
+
+        latchedSegments = new int[this.actuators.Length];
+
+        // With nothing that switches, the default latch is already correct.
+        modesLatched = this.cables.Length == 0 && this.actuators.All(a => a.Schedule.IsConstant);
 
         forces = new double[CoordinateCount];
         jacobian = new double[ConstraintCount * CoordinateCount];
@@ -115,6 +136,8 @@ public sealed class PlanarSystem : ISwitchedSystem
 
     public IReadOnlyList<Cable> Cables => cables;
 
+    public IReadOnlyList<JointActuator> Actuators => actuators;
+
     public Vector2d Gravity { get; }
 
     public ConstraintStabilization Stabilization { get; }
@@ -127,11 +150,14 @@ public sealed class PlanarSystem : ISwitchedSystem
     /// <summary>Number of generalized coordinates: 3 per body.</summary>
     public int CoordinateCount => DofPerBody * links.Length;
 
-    /// <summary>Length of the state vector: coordinates plus velocities.</summary>
-    public int StateLength => (2 * CoordinateCount) + 1;
+    /// <summary>Length of the state vector: coordinates, velocities, dissipated energy and actuator work.</summary>
+    public int StateLength => (2 * CoordinateCount) + 2;
 
     /// <summary>Index of the cumulative dissipated energy in the state vector.</summary>
     public int DissipatedEnergyIndex => 2 * CoordinateCount;
+
+    /// <summary>Index of the cumulative actuator work in the state vector.</summary>
+    public int ActuatorWorkIndex => (2 * CoordinateCount) + 1;
 
     public int PositionIndex(int body) => DofPerBody * CheckBody(body);
 
@@ -184,10 +210,10 @@ public sealed class PlanarSystem : ISwitchedSystem
         if (!modesLatched)
         {
             throw new InvalidOperationException(
-                "Cable modes are not latched. Step a system with cables through an EventSplittingStepper, or call LatchModes first.");
+                "Modes are not latched. Step a system with cables or scheduled actuators through an EventSplittingStepper, or call LatchModes first.");
         }
 
-        ComputeTotalForces(state, useLatchedModes: true);
+        ComputeTotalForces(time, state, useLatchedModes: true);
 
         for (var b = 0; b < links.Length; b++)
         {
@@ -199,14 +225,15 @@ public sealed class PlanarSystem : ISwitchedSystem
         }
 
         derivative[DissipatedEnergyIndex] = DissipatedPower(state);
+        derivative[ActuatorWorkIndex] = ActuatorPower(time, state, useLatchedModes: true);
     }
 
     /// <summary>
-    /// The force each pin exerts on its end A at this state, N. End B
-    /// receives the opposite force. Includes the stabilization terms, which
+    /// The force each pin exerts on its end A at this time and state, N. End
+    /// B receives the opposite force. Includes the stabilization terms, which
     /// vanish on the constraint manifold.
     /// </summary>
-    public void GetPinReactions(ReadOnlySpan<double> state, Span<Vector2d> reactions)
+    public void GetPinReactions(double time, ReadOnlySpan<double> state, Span<Vector2d> reactions)
     {
         CheckLength(state.Length);
         if (reactions.Length != pins.Length)
@@ -214,7 +241,7 @@ public sealed class PlanarSystem : ISwitchedSystem
             throw new ArgumentException($"Expected {pins.Length} reactions, got {reactions.Length}.", nameof(reactions));
         }
 
-        ComputeTotalForces(state, useLatchedModes: false);
+        ComputeTotalForces(time, state, useLatchedModes: false);
         for (var p = 0; p < pins.Length; p++)
         {
             reactions[p] = new Vector2d(multipliers[2 * p], multipliers[(2 * p) + 1]);
@@ -233,9 +260,11 @@ public sealed class PlanarSystem : ISwitchedSystem
     /// uniform bar, so the +x half has mass m/2 centered at local (ℓ/4, 0).
     /// Cable and pin forces count toward the +x half when their attachment
     /// has local x &gt; 0; a point exactly on the midpoint acts on neither.
-    /// Uses the physical cable law at the given state.
+    /// Uses the physical cable law and actuator torques at the given time
+    /// and state. Actuator torques are pure couples, so they enter only
+    /// through the link's acceleration.
     /// </summary>
-    public void GetMidpointCompressions(ReadOnlySpan<double> state, Span<double> compressions)
+    public void GetMidpointCompressions(double time, ReadOnlySpan<double> state, Span<double> compressions)
     {
         CheckLength(state.Length);
         if (compressions.Length != links.Length)
@@ -243,7 +272,7 @@ public sealed class PlanarSystem : ISwitchedSystem
             throw new ArgumentException($"Expected {links.Length} values, got {compressions.Length}.", nameof(compressions));
         }
 
-        ComputeTotalForces(state, useLatchedModes: false);
+        ComputeTotalForces(time, state, useLatchedModes: false);
 
         Span<Vector2d> halfForce = links.Length <= 64 ? stackalloc Vector2d[links.Length] : new Vector2d[links.Length];
         halfForce.Clear();
@@ -323,6 +352,11 @@ public sealed class PlanarSystem : ISwitchedSystem
             latchedModes[c] = CableModeAt(state, c);
         }
 
+        for (var a = 0; a < actuators.Length; a++)
+        {
+            latchedSegments[a] = actuators[a].Schedule.SegmentAt(time);
+        }
+
         modesLatched = true;
     }
 
@@ -338,6 +372,14 @@ public sealed class PlanarSystem : ISwitchedSystem
         for (var c = 0; c < cables.Length; c++)
         {
             if (CableModeAt(state, c) != latchedModes[c])
+            {
+                return false;
+            }
+        }
+
+        for (var a = 0; a < actuators.Length; a++)
+        {
+            if (actuators[a].Schedule.SegmentAt(time) != latchedSegments[a])
             {
                 return false;
             }
@@ -379,6 +421,20 @@ public sealed class PlanarSystem : ISwitchedSystem
         {
             var (length, rate, _) = CableGeometry(state, c);
             tensions[c] = cables[c].Tension(length, rate);
+        }
+    }
+
+    /// <summary>Torque of every actuator at <paramref name="time"/>, N·m, from its schedule.</summary>
+    public void GetActuatorTorques(double time, Span<double> torques)
+    {
+        if (torques.Length != actuators.Length)
+        {
+            throw new ArgumentException($"Expected {actuators.Length} torques, got {torques.Length}.", nameof(torques));
+        }
+
+        for (var a = 0; a < actuators.Length; a++)
+        {
+            torques[a] = actuators[a].Schedule.TorqueAt(time);
         }
     }
 
@@ -437,16 +493,24 @@ public sealed class PlanarSystem : ISwitchedSystem
         return state[DissipatedEnergyIndex];
     }
 
+    /// <summary>Work done on the system by the joint actuators since the start of the run, J.</summary>
+    public double ActuatorWork(ReadOnlySpan<double> state)
+    {
+        CheckLength(state.Length);
+        return state[ActuatorWorkIndex];
+    }
+
     /// <summary>Kinetic + gravitational + cable elastic energy, J.</summary>
     public double MechanicalEnergy(ReadOnlySpan<double> state) =>
         KineticEnergy(state) + GravitationalPotentialEnergy(state) + CableElasticEnergy(state);
 
     /// <summary>
-    /// Mechanical energy plus energy dissipated so far, J. With no actuators
-    /// or other external work it is conserved; its drift measures the
+    /// Mechanical energy plus energy dissipated so far, minus the work the
+    /// actuators have put in, J. It is conserved, so its drift measures the
     /// integration error (PLAN.md 4.3, test 7).
     /// </summary>
-    public double TotalEnergy(ReadOnlySpan<double> state) => MechanicalEnergy(state) + DissipatedEnergy(state);
+    public double TotalEnergy(ReadOnlySpan<double> state) =>
+        MechanicalEnergy(state) + DissipatedEnergy(state) - ActuatorWork(state);
 
     /// <summary>Total angular momentum about a fixed world point, kg·m²/s.</summary>
     public double AngularMomentum(ReadOnlySpan<double> state, Vector2d about)
@@ -467,7 +531,7 @@ public sealed class PlanarSystem : ISwitchedSystem
     /// Fills <see cref="forces"/> with the applied generalized forces plus
     /// the pin constraint forces Jᵀ·λ, and <see cref="multipliers"/> with λ.
     /// </summary>
-    private void ComputeTotalForces(ReadOnlySpan<double> state, bool useLatchedModes)
+    private void ComputeTotalForces(double time, ReadOnlySpan<double> state, bool useLatchedModes)
     {
         for (var b = 0; b < links.Length; b++)
         {
@@ -490,6 +554,14 @@ public sealed class PlanarSystem : ISwitchedSystem
             // The cable pulls end A toward B and end B toward A.
             AddPointForce(state, cableA[c], tension * direction);
             AddPointForce(state, cableB[c], -tension * direction);
+        }
+
+        for (var a = 0; a < actuators.Length; a++)
+        {
+            var torque = ActuatorTorque(a, time, useLatchedModes);
+            var p = actuatorPin[a];
+            AddTorque(pinA[p], torque);
+            AddTorque(pinB[p], -torque);
         }
 
         if (pins.Length > 0)
@@ -608,6 +680,37 @@ public sealed class PlanarSystem : ISwitchedSystem
         forces[i + 2] += Vector2d.Cross(r, force);
     }
 
+    /// <summary>Adds a pure torque to the body a point belongs to; the ground takes none.</summary>
+    private void AddTorque(ResolvedPoint point, double torque)
+    {
+        if (point.Body != Ground)
+        {
+            forces[(DofPerBody * point.Body) + 2] += torque;
+        }
+    }
+
+    private double ActuatorTorque(int actuator, double time, bool useLatchedModes)
+    {
+        var schedule = actuators[actuator].Schedule;
+        return useLatchedModes ? schedule.TorqueInSegment(latchedSegments[actuator], time) : schedule.TorqueAt(time);
+    }
+
+    /// <summary>Rate of work done by the actuators, Σ τ·(ω_A − ω_B), W.</summary>
+    private double ActuatorPower(double time, ReadOnlySpan<double> state, bool useLatchedModes)
+    {
+        var total = 0.0;
+        for (var a = 0; a < actuators.Length; a++)
+        {
+            var p = actuatorPin[a];
+            total += ActuatorTorque(a, time, useLatchedModes) * (AngularRate(state, pinA[p]) - AngularRate(state, pinB[p]));
+        }
+
+        return total;
+    }
+
+    private double AngularRate(ReadOnlySpan<double> state, ResolvedPoint point) =>
+        point.Body == Ground ? 0.0 : state[CoordinateCount + (DofPerBody * point.Body) + 2];
+
     /// <summary>Cable length L, rate L̇ and unit direction from end A to end B.</summary>
     private (double Length, double Rate, Vector2d Direction) CableGeometry(ReadOnlySpan<double> state, int cable)
     {
@@ -696,6 +799,19 @@ public sealed class PlanarSystem : ISwitchedSystem
         }
 
         throw new ArgumentException($"The {owner} refers to unknown link '{attachment.LinkId}'.");
+    }
+
+    private int ResolvePin(JointActuator actuator)
+    {
+        for (var p = 0; p < pins.Length; p++)
+        {
+            if (string.Equals(pins[p].Id, actuator.PinId, StringComparison.Ordinal))
+            {
+                return p;
+            }
+        }
+
+        throw new ArgumentException($"Actuator '{actuator.Id}' refers to unknown pin '{actuator.PinId}'.");
     }
 
     private static void RequireUniqueIds(IEnumerable<string> ids, string kind, string paramName)

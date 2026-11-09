@@ -106,7 +106,7 @@ internal static class PlanarXRecording
 
             if (reactions.Length > 0)
             {
-                system.GetPinReactions(s.Values, reactions);
+                system.GetPinReactions(s.Time, s.Values, reactions);
                 for (var p = 0; p < reactions.Length; p++)
                 {
                     recorder.Add($"reaction_{system.Pins[p].Id}_x", reactions[p].X);

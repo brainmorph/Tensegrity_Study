@@ -83,7 +83,7 @@ public static class RunRecorder
         {
             FixedStepRunner.Run(state, stepper, settings.Dt, settings.Steps, (step, s) =>
             {
-                tracker.Observe(s.Values, initialEnergy);
+                tracker.Observe(s.Time, s.Values, initialEnergy);
                 if (step % settings.FrameStride != 0)
                 {
                     return;
@@ -198,7 +198,7 @@ public static class RunRecorder
         }
 
         var reactions = new Vector2d[system.Pins.Count];
-        system.GetPinReactions(y, reactions);
+        system.GetPinReactions(state.Time, y, reactions);
         for (var p = 0; p < reactions.Length; p++)
         {
             var at = system.WorldPoint(y, system.Pins[p].A);
@@ -234,13 +234,13 @@ public static class RunRecorder
             maxTension = Enumerable.Repeat(double.NegativeInfinity, tensions.Length).ToArray();
         }
 
-        public void Observe(double[] state, double initialEnergy)
+        public void Observe(double time, double[] state, double initialEnergy)
         {
             maxBalanceError = Math.Max(maxBalanceError, Math.Abs(system.TotalEnergy(state) - initialEnergy));
             maxPinPosition = Math.Max(maxPinPosition, system.PinPositionResidual(state));
             maxPinVelocity = Math.Max(maxPinVelocity, system.PinVelocityResidual(state));
 
-            system.GetMidpointCompressions(state, compressions);
+            system.GetMidpointCompressions(time, state, compressions);
             for (var b = 0; b < compressions.Length; b++)
             {
                 minCompression[b] = Math.Min(minCompression[b], compressions[b]);

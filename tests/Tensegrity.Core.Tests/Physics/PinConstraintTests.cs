@@ -107,7 +107,7 @@ public class PinConstraintTests
         var dy = new double[system.StateLength];
 
         system.Evaluate(0, state.Values, dy);
-        system.GetPinReactions(state.Values, reactions);
+        system.GetPinReactions(state.Time, state.Values, reactions);
 
         // Not exactly zero: −π/2 is not representable (see PendulumTests).
         Assert.All(dy, d => Assert.Equal(0.0, d, 1e-12));

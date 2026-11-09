@@ -156,7 +156,7 @@ public class CableForceTests
         system.LatchModes(0, state);
         system.Evaluate(0, state, dy);
         system.GetCableTensions(state, tensions);
-        system.GetPinReactions(state, reactions);
+        system.GetPinReactions(0, state, reactions);
 
         var u = new Vector2d(-length, height) / d;
         var expectedReaction = -((tension * u) + (mass * PlanarSystem.StandardGravity));

@@ -133,7 +133,7 @@ public class PlanarTensegrityTests
         var weight = PlanarX.StrutMass * 9.81;
         var tensions = Tensions(system, model.InitialState);
         var reactions = new Vector2d[2];
-        system.GetPinReactions(model.InitialState, reactions);
+        system.GetPinReactions(0, model.InitialState, reactions);
 
         // Moments about each foot: T_top·h = w·(T_side + m·g/2).
         var top = PlanarX.Width / PlanarX.Height * (PlanarX.SideCableTension + (weight / 2));
