@@ -234,10 +234,10 @@ Completed milestones are struck through, with the commit that finished them. Any
 - Left open, carried forward: recorded pin reaction forces are not drawn yet (M6, with the plots). Interactive use (mouse pan and zoom, folder picker) has only been checked by building and launching; a hands-on pass is still due.
 
 ### M5 — Locking wing (2D)
-- **Carried from M3:** record actuators and their schedules in the manifest's `actuators` list (empty today), and their torques as frame channels.
-- **Carried from M2:** joint actuators add their work to the energy balance (`PlanarSystem.TotalEnergy` covers kinetic, gravitational, cable elastic and cable-damping dissipation today), and optional per-joint friction (Section 4.3) adds its dissipation the same way.
+- ~~**Carried from M3:** record actuators and their schedules in the manifest's `actuators` list (empty today), and their torques as frame channels.~~ Done in `b02ac32`: the list holds the same entries as `topology.actuators`, each actuator has an `actuator.<id>.torque` channel, and the energy series gains `actuator_work`.
+- ~~**Carried from M2:** joint actuators add their work to the energy balance (`PlanarSystem.TotalEnergy` covers kinetic, gravitational, cable elastic and cable-damping dissipation today), and optional per-joint friction (Section 4.3) adds its dissipation the same way.~~ Done in `6a61114` and `51b9e26`. An actuator is a torque couple across a pin (+τ on end A) following a piecewise-linear schedule whose breakpoints are split like cable events. Joint friction is viscous (`c·Δω`), so it needs no events.
 - Topology: a **two-to-three link planar arm** pinned at a shoulder, with cables forming a tendon network across the elbow (and wrist, if three links). This is the first real test of the central question: does a cable arrangement lock the joints in an extended pose with zero actuator torque?
-- Tests 10, 11 green. Effort curves recorded per configuration.
+- Test 10 green. ~~Test 11 green.~~ Done in `b06b15b`: `PlanarSystem.SolveHoldingTorques` gives the torques that make every acceleration zero, and reports the leftover acceleration when the chosen joints cannot hold the pose. Effort curves recorded per configuration.
 
 ### M6 — Exploration tools
 - Perturbation inputs (impulse on a link, external force over time, ground drop with the ground line).
