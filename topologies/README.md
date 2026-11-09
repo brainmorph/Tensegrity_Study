@@ -10,7 +10,7 @@ dotnet run --project src/Tensegrity.Cli -- run --topology topologies/planar_x.js
 
 ## Reference files
 
-These five files are generated, not hand-edited. They come from `ReferenceTopologies` in `src/Tensegrity.Topology`. Regenerate them with:
+These seven files are generated, not hand-edited. They come from `ReferenceTopologies` in `src/Tensegrity.Topology`. Regenerate them with:
 
 ```
 dotnet run --project src/Tensegrity.Cli -- export-topologies
@@ -25,6 +25,8 @@ Tests hold each file equal to the catalog, and each catalog entry bit-identical 
 | `planar_x.json` | Two-strut tensegrity on pinned feet under gravity, one strut kicked. Rings down to its shape. |
 | `planar_x_rest.json` | The same X at rest. It holds its prestressed shape with no actuators. |
 | `planar_x_free.json` | The X floating with no gravity, its shape disturbed with zero total momentum. Rings down to its shape. |
+| `locking_arm.json` | Two-link arm held straight out by one tendon per joint, with no muscle torque. The lower link is kicked downward, the lock holds, and the arm rings back to straight out. |
+| `locking_arm_collapse.json` | The same arm with its elbow tendon 10% too long, past the lock threshold. Released from straight out, the lower link collapses. |
 
 Hand-authored topologies can live here too. Files may contain `//` comments.
 
@@ -45,6 +47,10 @@ Results at commit `78ce212`. The change on halving dt = 1e-4 s estimates the err
 | planar_x | 5.6e-12 | 16.6, 16.3, 16.3 | 5.8e-11 J | 0 |
 | planar_x_rest | 9.4e-18 | (static: rounding only) | 5.3e-15 J | 0 |
 | planar_x_free | 1.4e-12 | 15.0, 14.4, 15.3 | 3.2e-10 J | 0 |
+| locking_arm | 2.0e-14 | 16.5, 17.3, then at the rounding floor | 7.4e-13 J | 0 |
+| locking_arm_collapse | 1.8e-12 | 14.9, 10.6, 10.6 | 5.2e-13 J | 9 at every level |
+
+The locking arm rows were added at M5 (after commit `67acd3b`). The collapsing arm falls by about 10.6 rather than 16 per halving below 2e-4 s. Its 9 tendon slack/taut switches are located to 1e-12 s, and the trajectory swings through large angles, so some error does not scale with dt⁴. The change at 1e-4 s is still 1.8e-12, far below float32 precision.
 
 Why 1e-4 s:
 

@@ -59,6 +59,18 @@ public sealed class ReferenceTopologyTests : IDisposable
                 return (model.System, PlanarX.PerturbedFree(model).Values);
             }
 
+            case "locking_arm":
+            {
+                var model = Arm.Locked();
+                return (model.System, Arm.Kicked(model).Values);
+            }
+
+            case "locking_arm_collapse":
+            {
+                var model = Arm.Collapsing();
+                return (model.System, model.InitialState.ToArray());
+            }
+
             default:
                 throw new ArgumentException(name);
         }

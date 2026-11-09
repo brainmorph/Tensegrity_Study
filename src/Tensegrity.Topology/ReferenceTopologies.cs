@@ -34,8 +34,12 @@ public static class ReferenceTopologies
     public const double XSideCableTension = 20.0;
     public const double XKickRate = 0.3;
 
+    // Locking arm parameters (PLAN.md M5): the LockingArmGeometry defaults, plus these.
+    public const double ArmKickRate = -2.0;
+    public const double ArmCollapseScale = 1.10;
+
     public static IReadOnlyList<string> Names { get; } =
-        ["pendulum", "cable_oscillator", "planar_x", "planar_x_rest", "planar_x_free"];
+        ["pendulum", "cable_oscillator", "planar_x", "planar_x_rest", "planar_x_free", "locking_arm", "locking_arm_collapse"];
 
     public static PlanarModel Create(string name) => name switch
     {
@@ -44,6 +48,8 @@ public static class ReferenceTopologies
         "planar_x" => PlanarX(),
         "planar_x_rest" => PlanarXRest(),
         "planar_x_free" => PlanarXFree(),
+        "locking_arm" => LockingArmKicked(),
+        "locking_arm_collapse" => LockingArmCollapse(),
         _ => throw new ArgumentException($"Unknown reference topology '{name}'. Known: {string.Join(", ", Names)}.", nameof(name)),
     };
 
@@ -117,6 +123,35 @@ public static class ReferenceTopologies
             state,
             "planar_x",
             "Planar two-strut tensegrity, 0.6 x 1.0 m, 0.5 kg struts, feet pinned to the ground, top/left/right cables (EA 5000 N, c 3 N s/m, side prestress 20 N), standard gravity. Strut s1 kicked at 0.3 rad/s about its foot; it rings down back to its shape.");
+    }
+
+    private const string ArmSummary =
+        "Two-link arm, upper 0.30 m / 0.20 kg pinned to the body at the shoulder, lower 0.35 m / 0.12 kg pinned at the elbow, standard gravity, no muscle torque. Each joint is held straight out by one tendon (EA 1000 N, c 150 N s/m) from a point 3 cm behind and 4-5 cm above it";
+
+    /// <summary>The locking arm held straight out, with the lower link kicked downward about the elbow.</summary>
+    public static PlanarModel LockingArmKicked()
+    {
+        var model = LockingArm.Create();
+        var system = model.System;
+        var state = model.CreateInitialState().Values;
+        var pose = system.GetPose(state, 1);
+        var elbow = system.GetPose(state, 0).ToWorld(system.Links[0].EndB);
+        system.SetBody(state, 1, pose, new Twist2d(Vector2d.Cross(ArmKickRate, pose.Position - elbow), ArmKickRate));
+        return model.With(
+            state,
+            "locking_arm",
+            ArmSummary + ". The lower link is kicked down at 2 rad/s about the elbow; the lock holds and it rings back to straight out.",
+            DefaultSimulation());
+    }
+
+    /// <summary>The locking arm with its elbow tendon lengthened past the lock threshold, released from straight out.</summary>
+    public static PlanarModel LockingArmCollapse()
+    {
+        var model = LockingArm.Create(elbowRestLengthScale: ArmCollapseScale);
+        return model.With(
+            name: "locking_arm_collapse",
+            description: ArmSummary + ", except the elbow tendon is 10% longer than the lock needs, past its threshold of about 8.2%. Released at rest from straight out, the lower link collapses.",
+            simulation: DefaultSimulation());
     }
 
     /// <summary>The free-floating X with no gravity, after opposite twists on its struts (zero total momentum).</summary>
