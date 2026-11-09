@@ -1,0 +1,39 @@
+{
+  // Hand-written (PLAN.md 7a). State is float64 and the run is
+  // deterministic, so poses use 1e-10: tight enough to catch any change in
+  // pins, tendons, actuators or the integrator, loose enough for operation
+  // reordering.
+  "time": { "absolute": 1e-12, "relative": 0 },
+  "upper_x": { "absolute": 1e-10, "relative": 0 },
+  "upper_y": { "absolute": 1e-10, "relative": 0 },
+  "upper_theta": { "absolute": 1e-10, "relative": 0 },
+  "lower_x": { "absolute": 1e-10, "relative": 0 },
+  "lower_y": { "absolute": 1e-10, "relative": 0 },
+  "lower_theta": { "absolute": 1e-10, "relative": 0 },
+  // Tendon stiffness k = EA/L0 is 6500-7400 N/m and damping 150 N s/m, so a
+  // 1e-10 change in geometry moves tensions and reactions by up to ~1e-6 N.
+  "tension_shoulder_tendon": { "absolute": 1e-6, "relative": 1e-9 },
+  "tension_elbow_tendon": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_shoulder_x": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_shoulder_y": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_elbow_x": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_elbow_y": { "absolute": 1e-6, "relative": 1e-9 },
+  "kinetic_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "potential_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "elastic_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "dissipated_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  // Worst |E_total(t) - E_total(0)|, J. Measured 7.4e-13 over 2 s in the
+  // dt study (falls ~16x per dt halving).
+  "max_energy_balance_error": { "absolute": 5e-12, "relative": 0 },
+  // Worst pin position error, m. Measured ~1e-15.
+  "max_pin_residual": { "absolute": 1e-13, "relative": 0 },
+  "event_count": { "absolute": 0, "relative": 0 },
+  "unresolved_steps": { "absolute": 0, "relative": 0 },
+  // Holding torque at the straight pose, N m: zero by construction.
+  "holding_torque_shoulder": { "absolute": 1e-12, "relative": 0 },
+  "holding_torque_elbow": { "absolute": 1e-12, "relative": 0 },
+  // Predicted lock thresholds (rest-length scales) from ArmStatics. The
+  // scale peaks flatly, so it is found far more sharply than the pose.
+  "lock_threshold_elbow": { "absolute": 1e-9, "relative": 0 },
+  "lock_threshold_shoulder": { "absolute": 1e-9, "relative": 0 }
+}

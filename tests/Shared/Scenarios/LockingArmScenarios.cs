@@ -53,3 +53,51 @@ public static class Arm
         return state;
     }
 }
+
+/// <summary>
+/// Test 10 (PLAN.md section 7) reference run, locked case: the arm held
+/// straight out by its tendons with zero torque, after a kick to the lower
+/// link. Also records the zero holding torques and the predicted lock
+/// thresholds, so a change to either is caught.
+/// </summary>
+public sealed class LockingArmScenario : IReferenceScenario
+{
+    public string Name => "locking_arm";
+
+    public string Description =>
+        "Two-link locking arm (upper 0.30 m / 0.20 kg, lower 0.35 m / 0.12 kg), each joint held straight out by one tendon (EA 1000 N, c 150 N s/m) from behind and above it, standard gravity, no torque. Lower link kicked down at 2 rad/s about the elbow; the lock holds. RK4 with event splitting, dt 1e-4 s, 1 s, sampled every 0.05 s.";
+
+    public IReadOnlyDictionary<string, double[]> Run()
+    {
+        var model = Arm.Locked();
+        var output = PlanarRecording.Record(model, Arm.Kicked(model)).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
+
+        var hold = model.System.SolveHoldingTorques(0, model.InitialState, [LockingArm.Shoulder, LockingArm.Elbow]);
+        output["holding_torque_shoulder"] = [hold[LockingArm.Shoulder]];
+        output["holding_torque_elbow"] = [hold[LockingArm.Elbow]];
+
+        var statics = ArmStatics.For(model);
+        output["lock_threshold_elbow"] = [statics.ElbowFold().Scale];
+        output["lock_threshold_shoulder"] = [statics.ShoulderFold().Scale];
+        return output;
+    }
+}
+
+/// <summary>
+/// Test 10 reference run, collapsed case: the elbow tendon 10% longer than
+/// the lock needs, past its threshold. Released from straight out, the lower
+/// link falls and swings through its tendon going slack and taut.
+/// </summary>
+public sealed class LockingArmCollapseScenario : IReferenceScenario
+{
+    public string Name => "locking_arm_collapse";
+
+    public string Description =>
+        "Two-link locking arm as in locking_arm, but the elbow tendon rest length is 1.10x the design value, past the 1.082 lock threshold. Released at rest from straight out; the lower link collapses and swings. RK4 with event splitting, dt 1e-4 s, 1 s, sampled every 0.05 s.";
+
+    public IReadOnlyDictionary<string, double[]> Run()
+    {
+        var model = Arm.Collapsing();
+        return PlanarRecording.Record(model, model.CreateInitialState());
+    }
+}

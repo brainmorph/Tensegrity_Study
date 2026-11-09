@@ -24,6 +24,10 @@ public class ReferenceScenarioTests
         new CableOscillatorScenario(),
         new PlanarXScenario(),
         new PlanarXFreeScenario(),
+
+        // M5
+        new LockingArmScenario(),
+        new LockingArmCollapseScenario(),
     ];
 
     public static TheoryData<string> All() => new(Scenarios.Select(s => s.Name));
