@@ -18,6 +18,13 @@ $GODOT --path godot -- --run runs/planar_x --play   # open and start playing
 $GODOT --path godot                                 # pick a run directory in the app
 ```
 
+Or let `scripts/view-latest.sh` build the viewer and open the most
+recently written run under `runs/`, passing any viewer options through:
+
+```sh
+scripts/view-latest.sh --play
+```
+
 Relative `--run` paths resolve against the directory you launch from.
 You can also open the project in the Godot editor and run it from there.
 The folder picker then starts in `runs/`.
