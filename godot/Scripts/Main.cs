@@ -37,8 +37,7 @@ public partial class Main : Node
 
         if (options.FidelityDump)
         {
-            GD.PrintErr("--fidelity-dump is not available yet.");
-            GetTree().Quit(2);
+            DumpFidelity(options.RunDirectory!);
             return;
         }
 
@@ -175,6 +174,25 @@ public partial class Main : Node
         // The overlays size themselves on the next layout pass; fit again then.
         Callable.From(camera.Refit).CallDeferred();
         ShowFrame(0);
+    }
+
+    /// <summary>Headless test 16: builds the scene the viewer draws, prints every frame, quits.</summary>
+    private void DumpFidelity(string directory)
+    {
+        try
+        {
+            var reader = RunReader.Open(directory);
+            var dump = new RunScene { Name = "Run" };
+            AddChild(dump);
+            dump.Build(reader);
+            FidelityDump.Print(dump, reader.FrameCount);
+            GetTree().Quit(0);
+        }
+        catch (Exception e) when (IsRunError(e))
+        {
+            GD.PrintErr($"Cannot open run {directory}: {e.Message}");
+            GetTree().Quit(1);
+        }
     }
 
     private static bool IsRunError(Exception e) =>
