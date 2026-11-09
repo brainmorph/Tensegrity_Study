@@ -119,7 +119,10 @@ public static class PlanarTensegrityX
         RequirePositive(height, nameof(height));
         RequirePositive(strutMass, nameof(strutMass));
         var diagonal = Math.Sqrt((width * width) + (height * height));
-        return (PlanarLink.SlenderBar(Strut1, strutMass, diagonal), PlanarLink.SlenderBar(Strut2, strutMass, diagonal), diagonal);
+        return (
+            PlanarLink.SlenderBar(Strut1, strutMass, diagonal, LinkRole.Strut),
+            PlanarLink.SlenderBar(Strut2, strutMass, diagonal, LinkRole.Strut),
+            diagonal);
     }
 
     /// <summary>Both struts centered at (0, h/2), at rest: s1 along BL → TR, s2 along BR → TL.</summary>

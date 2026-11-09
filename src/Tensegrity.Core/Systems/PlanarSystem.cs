@@ -221,6 +221,73 @@ public sealed class PlanarSystem : ISwitchedSystem
         }
     }
 
+    /// <summary>
+    /// Axial force across each link's midpoint section at this state,
+    /// compression positive, N: the force the link's −x half exerts on its
+    /// +x half, along the link axis. From Newton's law for the +x half,
+    /// <code>
+    /// F_section = (m/2)·a_q − F_applied(+x half) − (m/2)·g
+    /// </code>
+    /// where a_q is the acceleration of the half's center (the quarter
+    /// point), so the link's own weight and inertia are included. Assumes a
+    /// uniform bar, so the +x half has mass m/2 centered at local (ℓ/4, 0).
+    /// Cable and pin forces count toward the +x half when their attachment
+    /// has local x &gt; 0; a point exactly on the midpoint acts on neither.
+    /// Uses the physical cable law at the given state.
+    /// </summary>
+    public void GetMidpointCompressions(ReadOnlySpan<double> state, Span<double> compressions)
+    {
+        CheckLength(state.Length);
+        if (compressions.Length != links.Length)
+        {
+            throw new ArgumentException($"Expected {links.Length} values, got {compressions.Length}.", nameof(compressions));
+        }
+
+        ComputeTotalForces(state, useLatchedModes: false);
+
+        Span<Vector2d> halfForce = links.Length <= 64 ? stackalloc Vector2d[links.Length] : new Vector2d[links.Length];
+        halfForce.Clear();
+
+        void AddToHalf(Span<Vector2d> half, ResolvedPoint point, Vector2d force)
+        {
+            if (point.Body != Ground && point.Local.X > 0)
+            {
+                half[point.Body] += force;
+            }
+        }
+
+        for (var c = 0; c < cables.Length; c++)
+        {
+            var (length, rate, direction) = CableGeometry(state, c);
+            var force = cables[c].Tension(length, rate) * direction;
+            AddToHalf(halfForce, cableA[c], force);
+            AddToHalf(halfForce, cableB[c], -force);
+        }
+
+        for (var p = 0; p < pins.Length; p++)
+        {
+            var force = new Vector2d(multipliers[2 * p], multipliers[(2 * p) + 1]);
+            AddToHalf(halfForce, pinA[p], force);
+            AddToHalf(halfForce, pinB[p], -force);
+        }
+
+        for (var b = 0; b < links.Length; b++)
+        {
+            var link = links[b];
+            var i = DofPerBody * b;
+            var linear = new Vector2d(forces[i], forces[i + 1]) / link.Mass;
+            var angular = forces[i + 2] / link.MomentOfInertia;
+            var pose = GetPose(state, b);
+            var omega = GetTwist(state, b).Angular;
+            var axis = pose.RotateToWorld(Vector2d.UnitX);
+            var quarter = (link.Length / 4) * axis;
+            var quarterAcceleration = linear + Vector2d.Cross(angular, quarter) - (omega * omega * quarter);
+            var halfMass = link.Mass / 2;
+            var section = (halfMass * quarterAcceleration) - halfForce[b] - (halfMass * Gravity);
+            compressions[b] = Vector2d.Dot(section, axis);
+        }
+    }
+
     /// <summary>Largest pin position error |C| over all pins, m. Zero with no pins.</summary>
     public double PinPositionResidual(ReadOnlySpan<double> state)
     {
