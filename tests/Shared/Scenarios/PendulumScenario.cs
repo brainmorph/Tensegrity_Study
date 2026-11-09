@@ -123,7 +123,7 @@ public sealed class PendulumScenario : IReferenceScenario
     {
         var link = CreateLink();
         var pivot = new PinJoint("pivot", Attachment.OnLink(link.Id, link.EndA), Attachment.Ground(Vector2d.Zero));
-        return new PlanarSystem([link], PlanarSystem.StandardGravity, [pivot], stabilization);
+        return new PlanarSystem([link], PlanarSystem.StandardGravity, [pivot], stabilization: stabilization);
     }
 
     /// <summary>State with the bar at <paramref name="theta"/>, turning at <paramref name="omega"/>, pin satisfied.</summary>

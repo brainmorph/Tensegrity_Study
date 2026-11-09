@@ -75,8 +75,11 @@ All quantities are `float64` (double) inside the core. Nothing is downcast until
 - **Pin joint.** Connects a point on one body to a point on another body, or to the ground frame (a fixed pivot). Enforced as a holonomic constraint: the two attachment points coincide. Modeled with Lagrange multipliers (the constraint reaction forces are part of the solution, not inputs).
 - **Joint actuator (muscle stand-in).** A torque applied at a pin joint as a function of time or a feedback rule. Used to ask: how much effort does it take to hold or move a configuration? Default is zero torque, so the structure has to hold itself.
 - **Cable — elastic tendon.** Connects two body-fixed attachment points.
-  - Axial stiffness `EA` and rest length `L0`. Tension `T = max(0, k·(L − L0) + c·L̇)`, with `k = EA / L0` and `c` a viscous damping coefficient.
-  - Unilateral: a slack cable (`L < L0`) exerts zero force. Slack/taut transitions are **events** (see 4.2).
+  - Axial stiffness `EA` and rest length `L0`, with `k = EA / L0` and `c` a viscous damping coefficient. Tension:
+    - `T = 0` if `L < L0` (**slack**), however fast the cable is lengthening.
+    - `T = max(0, k·(L − L0) + c·L̇)` if `L ≥ L0`: **taut** when the bracket is non-negative, **recoiling** (stretched but shortening too fast for the spring, so `T = 0`) when it is negative.
+    - The damper can lower the tension but never make it compressive, and a slack cable never pulls. (An earlier draft used `max(0, k·(L − L0) + c·L̇)` for all `L`, which lets a slack cable that is lengthening fast pull before it reaches `L0`.)
+  - Unilateral: a cable never pushes. Switches between slack, taut and recoiling are **events** (see 4.2).
   - Optional cable mass, lumped at its ends. Default: off.
 - **Gravity**: uniform `g = (0, −9.81)` m/s² applied to each body's center of mass.
 - **Ground line** at `y = 0`: contact via penalty spring-damper with Coulomb friction. Deferred to M6 unless a topology needs it earlier (see Section 9).
@@ -91,10 +94,10 @@ All quantities are `float64` (double) inside the core. Nothing is downcast until
   - Maximal coordinates `(x, y, θ)` per body, with pin constraints enforced through Lagrange multipliers. Each RK4 stage solves a small linear system for the constraint forces.
   - Constraint drift is controlled by a Baumgarte-style stabilization term or by projecting positions and velocities back onto the constraint manifold after each step. The drift is logged and tested.
 - **Step size**: fixed `dt`, chosen per topology from a stability and convergence study (Section 7). Start point: `dt` ≤ 1e-4 s for stiff prestressed cables; verified rather than assumed.
-- **Non-smooth cable forces**: the `max(0, ·)` at slack and taut transitions causes RK4 to lose its order if a step straddles a transition. Plan:
-  1. Detect sign change of `L − L0` for each cable during a step.
-  2. Locate the crossing time by bisection (or secant) to a tolerance well below `dt`.
-  3. Split the step at the crossing and continue. This preserves RK4 accuracy across events.
+- **Non-smooth cable forces**: the switches between slack, taut and recoiling cause RK4 to lose its order if a step straddles one. Plan:
+  1. Latch each cable's mode at the start of a step and hold it for the whole step, so every RK4 stage sees a smooth right-hand side (in the taut mode the unclamped `k·(L − L0) + c·L̇` is used).
+  2. If any cable's mode at the end of the step differs from its latched mode, locate the switch time by bisection to a tolerance well below `dt` (default 1e-12 s).
+  3. Split the step just past the switch, re-latch, and continue. This preserves RK4 accuracy across events (verified: error ratio ≈ 16 per `dt` halving through repeated slack/taut cycles, where unsplit RK4 is erratic and 10³–10⁵× worse).
   - A fallback is a C¹-smoothed `softplus` transition with a tunable width. It is not the default because it changes the physics slightly.
 - **Determinism**: fixed element iteration order, no parallel reductions with non-deterministic ordering, seeded RNG if any randomness is used. Same input + seed → bit-identical output on the same platform.
 - **Solver interface**: `IIntegrator.Step(State, dt, Derivatives)`. RK4 is the first implementation. The interface must let us swap in an adaptive or implicit method later without touching element code.

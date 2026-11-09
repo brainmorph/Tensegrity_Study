@@ -7,7 +7,7 @@ namespace Tensegrity.Core.Systems;
 
 /// <summary>
 /// A set of planar rigid links under uniform gravity, joined by pin
-/// constraints, in maximal coordinates.
+/// constraints and cables, in maximal coordinates.
 ///
 /// State layout for n bodies (length 6n), positions first, then velocities:
 /// <code>
@@ -25,10 +25,18 @@ namespace Tensegrity.Core.Systems;
 /// F the applied forces and ω the <see cref="ConstraintStabilization"/>
 /// frequency; then q̈ = M⁻¹·(F + Jᵀ·λ).
 ///
+/// Cables switch between slack, taut and recoiling (see <see cref="Cable"/>).
+/// As an <see cref="ISwitchedSystem"/>, <see cref="Evaluate"/> uses each
+/// cable's latched mode, so a system with cables must be stepped by an
+/// <see cref="EventSplittingStepper"/> (or have its modes latched by hand).
+/// Diagnostics such as <see cref="GetCableTensions"/> and
+/// <see cref="GetPinReactions"/> always use the physical cable law at the
+/// given state, independent of the latch.
+///
 /// Instances keep scratch buffers between calls, so one instance must not be
 /// evaluated from several threads at once.
 /// </summary>
-public sealed class PlanarSystem
+public sealed class PlanarSystem : ISwitchedSystem
 {
     /// <summary>Standard gravity used throughout the study (PLAN.md 4.1), m/s².</summary>
     public static readonly Vector2d StandardGravity = new(0, -9.81);
@@ -41,6 +49,11 @@ public sealed class PlanarSystem
     private readonly PinJoint[] pins;
     private readonly ResolvedPoint[] pinA;
     private readonly ResolvedPoint[] pinB;
+    private readonly Cable[] cables;
+    private readonly ResolvedPoint[] cableA;
+    private readonly ResolvedPoint[] cableB;
+    private readonly CableMode[] latchedModes;
+    private bool modesLatched;
 
     // Scratch for the constraint solve, sized once.
     private readonly double[] forces;
@@ -52,6 +65,7 @@ public sealed class PlanarSystem
         IEnumerable<PlanarLink> links,
         Vector2d gravity,
         IEnumerable<PinJoint>? pins = null,
+        IEnumerable<Cable>? cables = null,
         ConstraintStabilization? stabilization = null)
     {
         ArgumentNullException.ThrowIfNull(links);
@@ -76,6 +90,13 @@ public sealed class PlanarSystem
         pinA = this.pins.Select(p => Resolve(p.A, $"pin '{p.Id}'")).ToArray();
         pinB = this.pins.Select(p => Resolve(p.B, $"pin '{p.Id}'")).ToArray();
 
+        this.cables = cables?.ToArray() ?? [];
+        RequireUniqueIds(this.cables.Select(c => c.Id), "cable", nameof(cables));
+        cableA = this.cables.Select(c => Resolve(c.A, $"cable '{c.Id}'")).ToArray();
+        cableB = this.cables.Select(c => Resolve(c.B, $"cable '{c.Id}'")).ToArray();
+        latchedModes = new CableMode[this.cables.Length];
+        modesLatched = this.cables.Length == 0;
+
         forces = new double[CoordinateCount];
         jacobian = new double[ConstraintCount * CoordinateCount];
         constraintMatrix = new double[ConstraintCount * ConstraintCount];
@@ -85,6 +106,8 @@ public sealed class PlanarSystem
     public IReadOnlyList<PlanarLink> Links => links;
 
     public IReadOnlyList<PinJoint> Pins => pins;
+
+    public IReadOnlyList<Cable> Cables => cables;
 
     public Vector2d Gravity { get; }
 
@@ -149,7 +172,13 @@ public sealed class PlanarSystem
         // dq/dt = v
         state[n..].CopyTo(derivative[..n]);
 
-        ComputeTotalForces(state);
+        if (!modesLatched)
+        {
+            throw new InvalidOperationException(
+                "Cable modes are not latched. Step a system with cables through an EventSplittingStepper, or call LatchModes first.");
+        }
+
+        ComputeTotalForces(state, useLatchedModes: true);
 
         for (var b = 0; b < links.Length; b++)
         {
@@ -174,7 +203,7 @@ public sealed class PlanarSystem
             throw new ArgumentException($"Expected {pins.Length} reactions, got {reactions.Length}.", nameof(reactions));
         }
 
-        ComputeTotalForces(state);
+        ComputeTotalForces(state, useLatchedModes: false);
         for (var p = 0; p < pins.Length; p++)
         {
             reactions[p] = new Vector2d(multipliers[2 * p], multipliers[(2 * p) + 1]);
@@ -205,6 +234,74 @@ public sealed class PlanarSystem
         }
 
         return worst;
+    }
+
+    /// <inheritdoc/>
+    public void LatchModes(double time, ReadOnlySpan<double> state)
+    {
+        CheckLength(state.Length);
+        for (var c = 0; c < cables.Length; c++)
+        {
+            latchedModes[c] = CableModeAt(state, c);
+        }
+
+        modesLatched = true;
+    }
+
+    /// <inheritdoc/>
+    public bool ModesMatch(double time, ReadOnlySpan<double> state)
+    {
+        CheckLength(state.Length);
+        if (!modesLatched)
+        {
+            return false;
+        }
+
+        for (var c = 0; c < cables.Length; c++)
+        {
+            if (CableModeAt(state, c) != latchedModes[c])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>Length L and rate L̇ of cable <paramref name="cable"/> at this state.</summary>
+    public (double Length, double Rate) GetCableLength(ReadOnlySpan<double> state, int cable)
+    {
+        CheckLength(state.Length);
+        if ((uint)cable >= (uint)cables.Length)
+        {
+            throw new ArgumentOutOfRangeException(nameof(cable), cable, $"System has {cables.Length} cables.");
+        }
+
+        var (length, rate, _) = CableGeometry(state, cable);
+        return (length, rate);
+    }
+
+    /// <summary>The physical mode of cable <paramref name="cable"/> at this state.</summary>
+    public CableMode GetCableMode(ReadOnlySpan<double> state, int cable)
+    {
+        var (length, rate) = GetCableLength(state, cable);
+        return cables[cable].ModeAt(length, rate);
+    }
+
+    /// <summary>Physical tension of every cable at this state, N.</summary>
+    public void GetCableTensions(ReadOnlySpan<double> state, Span<double> tensions)
+    {
+        CheckLength(state.Length);
+        if (tensions.Length != cables.Length)
+        {
+            throw new ArgumentException($"Expected {cables.Length} tensions, got {tensions.Length}.", nameof(tensions));
+        }
+
+        for (var c = 0; c < cables.Length; c++)
+        {
+            var (length, rate, _) = CableGeometry(state, c);
+            tensions[c] = cables[c].Tension(length, rate);
+        }
     }
 
     /// <summary>World position of an attachment at this state.</summary>
@@ -261,7 +358,7 @@ public sealed class PlanarSystem
     /// Fills <see cref="forces"/> with the applied generalized forces plus
     /// the pin constraint forces Jᵀ·λ, and <see cref="multipliers"/> with λ.
     /// </summary>
-    private void ComputeTotalForces(ReadOnlySpan<double> state)
+    private void ComputeTotalForces(ReadOnlySpan<double> state, bool useLatchedModes)
     {
         for (var b = 0; b < links.Length; b++)
         {
@@ -272,6 +369,18 @@ public sealed class PlanarSystem
             forces[i] = link.Mass * Gravity.X;
             forces[i + 1] = link.Mass * Gravity.Y;
             forces[i + 2] = 0.0;
+        }
+
+        for (var c = 0; c < cables.Length; c++)
+        {
+            var cable = cables[c];
+            var (length, rate, direction) = CableGeometry(state, c);
+            var mode = useLatchedModes ? latchedModes[c] : cable.ModeAt(length, rate);
+            var tension = cable.TensionInMode(mode, length, rate);
+
+            // The cable pulls end A toward B and end B toward A.
+            AddPointForce(state, cableA[c], tension * direction);
+            AddPointForce(state, cableB[c], -tension * direction);
         }
 
         if (pins.Length > 0)
@@ -373,6 +482,42 @@ public sealed class PlanarSystem
 
         var w = GetTwist(state, point.Body).Angular;
         return -sign * w * w * r;
+    }
+
+    /// <summary>Adds a force applied at a point: the force on the body and its moment r × F about the center of mass.</summary>
+    private void AddPointForce(ReadOnlySpan<double> state, ResolvedPoint point, Vector2d force)
+    {
+        if (point.Body == Ground)
+        {
+            return;
+        }
+
+        var r = GetPose(state, point.Body).RotateToWorld(point.Local);
+        var i = DofPerBody * point.Body;
+        forces[i] += force.X;
+        forces[i + 1] += force.Y;
+        forces[i + 2] += Vector2d.Cross(r, force);
+    }
+
+    /// <summary>Cable length L, rate L̇ and unit direction from end A to end B.</summary>
+    private (double Length, double Rate, Vector2d Direction) CableGeometry(ReadOnlySpan<double> state, int cable)
+    {
+        var span = WorldPoint(state, cableB[cable]) - WorldPoint(state, cableA[cable]);
+        var length = span.Length;
+        if (!(length > 0))
+        {
+            throw new InvalidOperationException($"Cable '{cables[cable].Id}' has zero length, so its direction is undefined.");
+        }
+
+        var direction = span / length;
+        var rate = Vector2d.Dot(direction, PointVelocity(state, cableB[cable]) - PointVelocity(state, cableA[cable]));
+        return (length, rate, direction);
+    }
+
+    private CableMode CableModeAt(ReadOnlySpan<double> state, int cable)
+    {
+        var (length, rate, _) = CableGeometry(state, cable);
+        return cables[cable].ModeAt(length, rate);
     }
 
     private double InverseMass(int coordinate)

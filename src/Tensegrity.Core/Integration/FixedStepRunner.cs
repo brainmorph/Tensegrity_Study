@@ -22,8 +22,36 @@ public static class FixedStepRunner
         Action<long, SystemState>? observer = null,
         long stride = 1)
     {
-        ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(integrator);
+        ArgumentNullException.ThrowIfNull(derivatives);
+        Run(state, (s, h) => integrator.Step(s, h, derivatives), dt, steps, observer, stride);
+    }
+
+    /// <summary>
+    /// As above, for a switched system stepped by an
+    /// <see cref="EventSplittingStepper"/>, which splits steps at mode switches.
+    /// </summary>
+    public static void Run(
+        SystemState state,
+        EventSplittingStepper stepper,
+        double dt,
+        long steps,
+        Action<long, SystemState>? observer = null,
+        long stride = 1)
+    {
+        ArgumentNullException.ThrowIfNull(stepper);
+        Run(state, stepper.Step, dt, steps, observer, stride);
+    }
+
+    private static void Run(
+        SystemState state,
+        Action<SystemState, double> step,
+        double dt,
+        long steps,
+        Action<long, SystemState>? observer,
+        long stride)
+    {
+        ArgumentNullException.ThrowIfNull(state);
         ArgumentOutOfRangeException.ThrowIfNegative(steps);
         ArgumentOutOfRangeException.ThrowIfLessThan(stride, 1);
 
@@ -31,7 +59,7 @@ public static class FixedStepRunner
         observer?.Invoke(0, state);
         for (long k = 1; k <= steps; k++)
         {
-            integrator.Step(state, dt, derivatives);
+            step(state, dt);
             state.Time = t0 + (k * dt);
             if (observer is not null && k % stride == 0)
             {
