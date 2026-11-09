@@ -194,18 +194,21 @@ Purpose: when we make progress, we find out immediately if something that used t
 
 ## 8. Milestones
 
-### M0 — Scaffolding
-- `git init`, `.gitignore` (bin/, obj/, runs/, .godot/, .import/), empty solution `Tensegrity.sln` with the projects above (Core, RunFormat, Topology, Cli, and the test project).
-- Regression harness in place (Section 7a): the regression project, the `tests/golden/` folder, the tolerance comparison helper, and one smoke-test baseline.
-- Build and test pass, including the regression suite.
+Completed milestones are struck through, with the commit that finished them. Anything a finished milestone left open is carried forward as a live item in a later milestone.
 
-### M1 — 2D numerics core
-- 2D vector and rotation utilities in `float64`. Planar link (mass, inertia, state). RK4 integrator. Gravity.
-- Tests 2 (free body), 3 (pendulum), 5 (RK4 convergence) green.
-- Pin constraints arrive in M2, so the M1 pendulum is a **test-side stand-in**: the link is integrated in its single angle about the pivot, using the Core RK4 and the Core link inertia, and the full link pose is reconstructed from it. M2 must reproduce the `pendulum` baseline with a real Lagrange-multiplier pin, and then the stand-in is retired.
+### ~~M0 — Scaffolding~~ — done in `e3f2132`
+- ~~`git init`, `.gitignore` (bin/, obj/, runs/, .godot/, .import/), empty solution `Tensegrity.sln` with the projects above (Core, RunFormat, Topology, Cli, and the test project).~~
+- ~~Regression harness in place (Section 7a): the regression project, the `tests/golden/` folder, the tolerance comparison helper, and one smoke-test baseline.~~
+- ~~Build and test pass, including the regression suite.~~
+
+### ~~M1 — 2D numerics core~~ — done in `a6e8889`
+- ~~2D vector and rotation utilities in `float64`. Planar link (mass, inertia, state). RK4 integrator. Gravity.~~
+- ~~Tests 2 (free body), 3 (pendulum), 5 (RK4 convergence) green.~~
+- ~~Pin constraints arrive in M2, so the M1 pendulum is a test-side stand-in: the link is integrated in its single angle about the pivot, and the full link pose is reconstructed from it.~~ Carried forward to M2.
 
 ### M2 — Planar tensegrity
 - Pin constraints (Lagrange multipliers, stabilization). Cables with `EA`, `L0`, damping, unilateral behavior, event splitting. Energy accounting.
+- **Carried from M1:** reproduce the `pendulum` baseline with a real Lagrange-multiplier pin, then retire the test-side `ReducedPendulum` stand-in.
 - Topology: **planar two-strut tensegrity** — two crossing struts with four cables, the 2D analog of a tensegrity X. Simple, and it has a known prestressed equilibrium to check against.
 - Tests 1, 4, 6, 7, 8, 9 green.
 
