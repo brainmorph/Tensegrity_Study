@@ -1,0 +1,6 @@
+{
+  // Loose enough to absorb a few ulps of libm difference across platforms,
+  // tight enough that any real change in the computation fails.
+  "sine_samples": { "absolute": 1e-15, "relative": 0 },
+  "harmonic_100": { "absolute": 0, "relative": 1e-14 }
+}

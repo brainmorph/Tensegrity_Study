@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Command-line entry point: load topology, run sim, write run dir. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Tensegrity.Core\Tensegrity.Core.csproj" />
+    <ProjectReference Include="..\Tensegrity.Topology\Tensegrity.Topology.csproj" />
+    <ProjectReference Include="..\Tensegrity.RunFormat\Tensegrity.RunFormat.csproj" />
+  </ItemGroup>
+</Project>

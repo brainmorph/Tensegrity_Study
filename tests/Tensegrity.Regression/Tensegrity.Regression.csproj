@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Regression suite (PLAN.md section 7a): runs reference scenarios and
+    compares them against committed golden baselines in tests/golden/.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Tensegrity.Core\Tensegrity.Core.csproj" />
+    <ProjectReference Include="..\..\src\Tensegrity.RunFormat\Tensegrity.RunFormat.csproj" />
+    <ProjectReference Include="..\..\src\Tensegrity.Topology\Tensegrity.Topology.csproj" />
+  </ItemGroup>
+</Project>

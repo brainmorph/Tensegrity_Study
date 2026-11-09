@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Read-only run format: data types and the manifest/frame reader.
+    Contains no physics. Targets net8.0 because the Godot 4.7 visualizer
+    (GodotSharp 4.7.0, lib/net8.0) references this project directly.
+    Must not reference any other Tensegrity project.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+</Project>

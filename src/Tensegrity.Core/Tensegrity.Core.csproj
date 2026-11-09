@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Pure C# simulation core: 2D rigid links, pins, cables, actuators, RK4,
+    constraints, events, energy, run writer. No Godot or UI dependency.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Tensegrity.RunFormat\Tensegrity.RunFormat.csproj" />
+  </ItemGroup>
+</Project>

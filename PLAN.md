@@ -57,8 +57,9 @@ Local resources in scope: .NET SDK 8.0 and 10.0; Godot 4.7 mono and its `GodotSh
 - .NET SDK 10.0.x (present: `dotnet 10.0.114`), also 8.0.128.
 - Godot 4.7 stable, **mono build** (C#-capable), at `~/Desktop/Godot_v4.7-stable_mono_linux_x86_64/Godot_v4.7-stable_mono_linux.x86_64`. Verified: reports `4.7.stable.mono.official`. Ships `GodotSharp/` alongside it.
 - OS: Linux. All paths and commands in this plan assume Linux.
-- Repo is currently empty and not under git. Decide whether to `git init` before Milestone 1 (recommended).
-- Test framework: **xUnit** is already in the local NuGet cache. Before M0 relies on it, verify an offline restore works (`dotnet restore --source ~/.nuget/packages`, or equivalent) without contacting nuget.org. If it does not restore offline, fall back to a small in-repo test runner built on the base class library.
+- Repo is under git.
+- Test framework: **xUnit 2.9.3** (runner 3.1.4, Microsoft.NET.Test.Sdk 17.14.1) from the local NuGet cache. Verified in M0: the repo `nuget.config` clears all remote sources and lists only `~/.nuget/packages`, and restore succeeds offline. A package or exact version not in the cache fails the restore instead of downloading.
+- Godot 4.7's C# assemblies target **.NET 8** (`GodotSharp.4.7.0`, `lib/net8.0`), so `Tensegrity.RunFormat` targets `net8.0`. All other projects target `net10.0`. `Godot.NET.Sdk 4.7.0` is in the local cache, so the Godot project can restore under the same `nuget.config`.
 
 ## 4. Physics model (Stage A: 2D)
 
@@ -188,8 +189,6 @@ Purpose: when we make progress, we find out immediately if something that used t
 - M1: free-body fall, spinning body, pendulum.
 - M2: planar two-strut tensegrity, single cable oscillator.
 - M5: two-link locking arm (locked and collapsed cases).
-
-## 7b. Milestone 0 addition
 
 ## 8. Milestones
 

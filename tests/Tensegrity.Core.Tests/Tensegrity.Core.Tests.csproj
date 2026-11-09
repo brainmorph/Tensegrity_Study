@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Unit, analytic, convergence, energy, determinism, isolation tests. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Tensegrity.Core\Tensegrity.Core.csproj" />
+    <ProjectReference Include="..\..\src\Tensegrity.RunFormat\Tensegrity.RunFormat.csproj" />
+    <ProjectReference Include="..\..\src\Tensegrity.Topology\Tensegrity.Topology.csproj" />
+  </ItemGroup>
+</Project>

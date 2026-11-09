@@ -1,0 +1,16 @@
+# Build output
+bin/
+obj/
+
+# Simulation run output (regenerable from topology + seed)
+runs/
+
+# Godot
+.godot/
+.import/
+
+# IDE / OS
+.vs/
+.vscode/
+*.user
+.DS_Store

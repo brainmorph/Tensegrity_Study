@@ -1,0 +1,19 @@
+{
+  "name": "smoke",
+  "description": "M0 harness smoke test. sin(0.1*k) for k=0..9 and H_100 summed in order k=1..100. Values computed independently in Python 3 (math.sin, float repr), not by the C# scenario.",
+  "quantities": {
+    "sine_samples": [
+      0.0,
+      0.09983341664682815,
+      0.19866933079506122,
+      0.2955202066613396,
+      0.3894183423086505,
+      0.479425538604203,
+      0.5646424733950355,
+      0.6442176872376911,
+      0.7173560908995228,
+      0.7833269096274834
+    ],
+    "harmonic_100": [5.187377517639621]
+  }
+}
