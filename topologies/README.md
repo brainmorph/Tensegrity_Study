@@ -60,3 +60,31 @@ Why 1e-4 s:
 - **Consistent.** All golden baselines and test tolerances were set at 1e-4 s.
 
 Rerun the study when a topology changes, and record the new numbers here.
+
+## Effort curves (test 11, M5)
+
+Effort is the joint torque needed to hold a pose still (PLAN.md 7, test 11). `effort` scales one cable's rest length and prints the holding torque in the file's initial pose, taken at rest:
+
+```
+dotnet run --project src/Tensegrity.Cli -- effort --topology topologies/locking_arm.json --cable elbow_tendon --from 0.98 --to 1.03 --steps 11
+```
+
+A positive torque lifts the arm. The design rest lengths (scale 1) hold the arm straight out with zero torque at both joints. Each tendon changes only its own joint's torque, because the elbow tendon pulls between two links of the arm and adds nothing about the shoulder.
+
+| Rest-length scale | Elbow tendon tension (N) | Elbow torque (N m) | Shoulder tendon tension (N) | Shoulder torque (N m) |
+|---|---|---|---|---|
+| 0.980 | 27.556 | −0.6044 | 43.358 | −0.7919 |
+| 0.990 | 17.177 | −0.2991 | 32.819 | −0.3919 |
+| 0.995 | 12.065 | −0.1488 | 27.629 | −0.1950 |
+| 1.000 | 7.005 | 0.0000 | 22.491 | 0.0000 |
+| 1.005 | 1.995 | 0.1473 | 17.404 | 0.1930 |
+| 1.010 | 0 (slack) | 0.2060 | 12.367 | 0.3842 |
+| 1.020 | 0 (slack) | 0.2060 | 2.442 | 0.7608 |
+| 1.030 | 0 (slack) | 0.2060 | 0 (slack) | 0.8535 |
+
+What the curves say:
+
+- **Holding the arm straight is sensitive.** Torque grows almost linearly as a tendon lengthens, until the tendon goes slack: at scale 1.0070 for the elbow (its 0.70% design strain) and 1.0225 for the shoulder (2.25%). Past that point the joint carries its link's full weight moment: 0.206 N m at the elbow and 0.854 N m at the shoulder. A short tendon over-lifts, so the torque turns negative.
+- **The lock is not.** With zero torque, a lengthened tendon does not drop the arm. The arm droops to a new stable pose where the tendon is taut again. The lock is lost only at the fold that test 10 predicts and checks: scale 1.0819 for the elbow (+11.1 mm) and 1.0850 for the shoulder (+13.1 mm). This margin comes from the tendon geometry (the post behind the joint), not from pre-tension.
+
+Computed at commit `74d0b39` plus the `effort` command.

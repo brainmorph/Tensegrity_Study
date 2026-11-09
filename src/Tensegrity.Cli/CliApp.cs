@@ -34,6 +34,10 @@ public sealed class CliApp
               Run at dt, dt/2, dt/4, ... and print how much each halving changes
               the trajectory (test 14). --dt is the coarsest step (default 4x the
               file's dt); --levels defaults to 5.
+          effort --topology FILE --cable ID [--pins A,B] [--from X] [--to X] [--steps N]
+              Holding torque at the pins (default all) that keeps the file's
+              initial pose still, as the cable's rest length is scaled from
+              --from to --to (default 0.95 to 1.05) in N steps (default 11).
           export-csv RUN_DIR [--out FILE]
               Write a run's frames as CSV, one row per frame (default
               RUN_DIR/frames.csv).
@@ -71,6 +75,7 @@ public sealed class CliApp
                 "dt-study" => DtStudyCommand(options),
                 "export-csv" => ExportCsvCommand(options),
                 "export-topologies" => ExportTopologiesCommand(options),
+                "effort" => EffortCommand(options),
                 _ => throw new UsageException($"unknown command '{args[0]}'."),
             };
         }
@@ -168,6 +173,40 @@ public sealed class CliApp
         return Success;
 
         static string Format(double? value) => value is { } v ? v.ToString("E2", CultureInfo.InvariantCulture) : "-";
+    }
+
+    private int EffortCommand(Options options)
+    {
+        options.Allow("topology", "cable", "pins", "from", "to", "steps");
+        var topologyPath = options.Required("topology");
+        var cable = options.Required("cable");
+        var from = options.Double("from") ?? 0.95;
+        var to = options.Double("to") ?? 1.05;
+        var steps = options.Int("steps") ?? 11;
+        if (steps < 2 || !(from > 0) || !(to > from))
+        {
+            throw new UsageException("effort needs 0 < --from < --to and --steps of at least 2.");
+        }
+
+        var document = RunFiles.ReadTopology(topologyPath);
+        var pins = options.Value("pins")?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            ?? document.Pins.Select(p => p.Id).ToArray();
+        var scales = Enumerable.Range(0, steps).Select(i => from + ((to - from) * i / (steps - 1)));
+        var points = EffortSweep.Run(document, cable, pins, scales);
+
+        stdout.WriteLine($"effort: {document.Name}, cable {cable} scaled, holding torque in the initial pose");
+        stdout.WriteLine();
+        stdout.WriteLine($"| scale | rest length (m) | tension (N) | {string.Join(" | ", pins.Select(p => $"{p} (N m)"))} | unheld accel |");
+        stdout.WriteLine($"|---|---|---|{string.Concat(pins.Select(_ => "---|"))}---|");
+        foreach (var point in points)
+        {
+            var torques = string.Join(" | ", point.Torques.Select(t => (Math.Round(t, 4) + 0.0).ToString("F4", CultureInfo.InvariantCulture)));
+            var unheld = Math.Max(point.MaxLinearAcceleration, point.MaxAngularAcceleration);
+            stdout.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                $"| {point.Scale:F4} | {point.RestLength:F6} | {point.Tension:F3} | {torques} | {unheld:E1} |"));
+        }
+
+        return Success;
     }
 
     private int ExportCsvCommand(Options options)

@@ -53,6 +53,25 @@ public sealed class CliTests : IDisposable
     }
 
     [Fact]
+    public void EffortPrintsTheHoldingTorqueAcrossTheSweep()
+    {
+        var exit = Cli("effort", "--topology", Topology("locking_arm"), "--cable", "elbow_tendon", "--from", "0.99", "--to", "1.01", "--steps", "3");
+
+        Assert.Equal(CliApp.Success, exit);
+        var lines = stdout.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Contains(lines, l => l.StartsWith("| scale | rest length (m) | tension (N) | shoulder (N m) | elbow (N m) |", StringComparison.Ordinal));
+        Assert.Contains(lines, l => l.StartsWith("| 1.0000 | 0.135069 | 7.005 | 0.0000 | 0.0000 |", StringComparison.Ordinal));
+        Assert.Contains(lines, l => l.StartsWith("| 1.0100 | 0.136419 | 0.000 | 0.0000 | 0.2060 |", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void EffortRejectsABadRange()
+    {
+        Assert.Equal(CliApp.Usage, Cli("effort", "--topology", Topology("locking_arm"), "--cable", "elbow_tendon", "--from", "1.1", "--to", "1.0"));
+        Assert.Equal(CliApp.Failure, Cli("effort", "--topology", Topology("locking_arm"), "--cable", "nope"));
+    }
+
+    [Fact]
     public void RunRefusesToOverwriteAnExistingRun()
     {
         Assert.Equal(CliApp.Success, Cli("run", "--topology", Topology("pendulum"), "--duration", "0.01", "--out", Dir("run")));
