@@ -144,7 +144,7 @@ Each run is a directory, e.g. `runs/2026-11-09_planar-x_seed42/`:
   - `gravity`, `ground` parameters, damping parameters, actuator schedule, RNG seed
   - `topology` — links (id, mass, inertia, attachment points in body frame, initial pose), pins (id, body/ground refs, local points), cables (id, endpoint refs, `L0`, `EA`, damping, prestress), actuators
   - `diagnostics` — energy series, constraint residual maximum, number of event splits, any compression-violation flags for links
-- `frames.bin` — little-endian binary, one frame after another. Per link: `x`, `y`, `θ` (3×`float32`). Optionally per cable: tension (1×`float32`). Per pin: reaction force (2×`float32`), useful for showing where effort goes. Layout is documented in the manifest (`frame_layout`) so Godot can read it without guessing.
+- `frames.bin` — little-endian `float32`, one frame after another, as named channels listed in the manifest (`frame_layout.channels`) so Godot can read it without guessing. Per frame: `time`; per link `x`, `y`, `θ`; per cable tension and both world endpoints; per pin the reaction force (useful for showing where effort goes) and its world position. Endpoints and pin positions are recorded so the renderer places numbers and computes no geometry.
 
 Why this split: the manifest is small and inspectable; frames are large and binary. Godot's reader parses the JSON and reads floats from a `FileAccess`.
 
@@ -216,13 +216,14 @@ Completed milestones are struck through, with the commit that finished them. Any
 - ~~Tests 1, 4, 6, 7, 8, 9 green.~~
 - Left open, carried forward: topology JSON and strut-compression reporting (M3), the X's step size (M3), joint friction and actuator work in the energy balance (M5), global settling damping (M6).
 
-### M3 — Run output and CLI
-- Manifest and frame writer, reader in Core for tests.
-- CLI: `dotnet run --project src/Tensegrity.Cli -- --topology topologies/planar_x.json --seed 42 --out runs/...`
-- Tests 12, 13 green. Test 14 documented per topology.
-- **Carried from M2:** topology JSON files (Section 9.7) that load into the same `PlanarModel` the C# generators (`PlanarTensegrityX`) build, so the CLI's `--topology` has something to read.
-- **Carried from M2:** report each strut's axial force and flag any strut in tension (Section 4.1) in the manifest diagnostics, alongside the event count, unresolved event steps and maximum pin residual the stepper and system already provide.
-- **Carried from M2:** for test 14, at `dt` = 1e-4 the planar X's energy-balance error falls only 12.6–12.8× per halving (its stiff cable modes put it at the start of RK4's asymptotic range; 5e-5 gives 14.4×). Decide its recorded `dt` from that study.
+### ~~M3 — Run output and CLI~~ — done in `4b49810`, `3a9f6ca`, `a5bba0e`, `f98f4e6`, `78ce212`, `07af9a4`
+- ~~Manifest and frame writer, reader in Core for tests.~~ The reader lives in `Tensegrity.RunFormat` (Section 5), so Godot uses the same one; the writer is `RunRecorder` in Core.
+- ~~CLI: `dotnet run --project src/Tensegrity.Cli -- --topology topologies/planar_x.json --seed 42 --out runs/...`~~ As `tensegrity run --topology …`, plus `dt-study`, `export-csv` and `export-topologies`.
+- ~~Tests 12, 13 green. Test 14 documented per topology.~~ Study in `topologies/README.md`: every reference topology runs at 1e-4 s.
+- ~~**Carried from M2:** topology JSON files (Section 9.7) that load into the same `PlanarModel` the C# generators (`PlanarTensegrityX`) build, so the CLI's `--topology` has something to read.~~ Run settings live in the file's `simulation` block, overridable from the command line.
+- ~~**Carried from M2:** report each strut's axial force and flag any strut in tension (Section 4.1) in the manifest diagnostics, alongside the event count, unresolved event steps and maximum pin residual the stepper and system already provide.~~ Axial force is the midpoint section force, including the strut's own weight and inertia; the CLI exits with code 3 when a strut goes into tension.
+- ~~**Carried from M2:** for test 14, at `dt` = 1e-4 the planar X's energy-balance error falls only 12.6–12.8× per halving (its stiff cable modes put it at the start of RK4's asymptotic range; 5e-5 gives 14.4×). Decide its recorded `dt` from that study.~~ Its trajectory is asymptotic at 1e-4 s (16× per halving); 1e-4 s kept.
+- Left open, carried forward: actuators in the manifest and frames (M5).
 
 ### M4 — Godot visualizer (2D first light)
 - Godot 4.7 mono project under `godot/`. Loads a run directory via `Tensegrity.RunFormat`. Renders links as bars at their recorded position and angle, cables as lines whose color follows recorded tension, pins as dots. Timeline slider.
@@ -230,6 +231,7 @@ Completed milestones are struck through, with the commit that finished them. Any
 - No physics nodes or physics-driven transforms in the Godot scene. Transforms are set directly from recorded data.
 
 ### M5 — Locking wing (2D)
+- **Carried from M3:** record actuators and their schedules in the manifest's `actuators` list (empty today), and their torques as frame channels.
 - **Carried from M2:** joint actuators add their work to the energy balance (`PlanarSystem.TotalEnergy` covers kinetic, gravitational, cable elastic and cable-damping dissipation today), and optional per-joint friction (Section 4.3) adds its dissipation the same way.
 - Topology: a **two-to-three link planar arm** pinned at a shoulder, with cables forming a tendon network across the elbow (and wrist, if three links). This is the first real test of the central question: does a cable arrangement lock the joints in an extended pose with zero actuator torque?
 - Tests 10, 11 green. Effort curves recorded per configuration.
