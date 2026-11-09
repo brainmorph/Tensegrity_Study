@@ -1,0 +1,57 @@
+{
+  "format_version": 1,
+  "name": "cable_oscillator",
+  "description": "2 kg link hanging from a ground anchor by one cable at its center of mass (L0 1 m, EA 2000 N, c 8 N s/m), released at rest 3 static stretches below equilibrium; bounces through taut, recoiling and slack.",
+  "gravity": [
+    0,
+    -9.81
+  ],
+  "constraint_stabilization": 50,
+  "links": [
+    {
+      "id": "weight",
+      "role": "link",
+      "mass": 2,
+      "inertia": 0.006666666666666668,
+      "length": 0.2,
+      "pose": {
+        "x": 0,
+        "y": -1.0392400000000002,
+        "theta": 0
+      },
+      "twist": {
+        "vx": 0,
+        "vy": 0,
+        "omega": 0
+      }
+    }
+  ],
+  "pins": [],
+  "cables": [
+    {
+      "id": "tendon",
+      "a": {
+        "ground": [
+          0,
+          0
+        ]
+      },
+      "b": {
+        "link": "weight",
+        "point": [
+          0,
+          0
+        ]
+      },
+      "rest_length": 1,
+      "axial_stiffness": 2000,
+      "damping": 8
+    }
+  ],
+  "simulation": {
+    "dt": 0.0001,
+    "duration": 2,
+    "frame_stride": 100,
+    "event_tolerance": 1E-12
+  }
+}

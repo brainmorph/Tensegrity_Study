@@ -4,5 +4,6 @@
     <ProjectReference Include="..\..\src\Tensegrity.Core\Tensegrity.Core.csproj" />
     <ProjectReference Include="..\..\src\Tensegrity.RunFormat\Tensegrity.RunFormat.csproj" />
     <ProjectReference Include="..\..\src\Tensegrity.Topology\Tensegrity.Topology.csproj" />
+    <ProjectReference Include="..\..\src\Tensegrity.Cli\Tensegrity.Cli.csproj" />
   </ItemGroup>
 </Project>

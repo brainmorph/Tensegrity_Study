@@ -1,0 +1,148 @@
+{
+  "format_version": 1,
+  "name": "planar_x",
+  "description": "Planar two-strut tensegrity, 0.6 x 1.0 m, 0.5 kg struts, feet pinned to the ground, top/left/right cables (EA 5000 N, c 3 N s/m, side prestress 20 N), standard gravity. Strut s1 kicked at 0.3 rad/s about its foot; it rings down back to its shape.",
+  "gravity": [
+    0,
+    -9.81
+  ],
+  "constraint_stabilization": 50,
+  "links": [
+    {
+      "id": "s1",
+      "role": "strut",
+      "mass": 0.5,
+      "inertia": 0.05666666666666665,
+      "length": 1.16619037896906,
+      "pose": {
+        "x": 0,
+        "y": 0.5,
+        "theta": 1.0303768265243125
+      },
+      "twist": {
+        "vx": -0.15,
+        "vy": 0.09,
+        "omega": 0.3
+      }
+    },
+    {
+      "id": "s2",
+      "role": "strut",
+      "mass": 0.5,
+      "inertia": 0.05666666666666665,
+      "length": 1.16619037896906,
+      "pose": {
+        "x": 0,
+        "y": 0.5,
+        "theta": 2.1112158270654806
+      },
+      "twist": {
+        "vx": 0,
+        "vy": 0,
+        "omega": 0
+      }
+    }
+  ],
+  "pins": [
+    {
+      "id": "foot1",
+      "a": {
+        "link": "s1",
+        "point": [
+          -0.58309518948453,
+          0
+        ]
+      },
+      "b": {
+        "ground": [
+          -0.3,
+          0
+        ]
+      }
+    },
+    {
+      "id": "foot2",
+      "a": {
+        "link": "s2",
+        "point": [
+          -0.58309518948453,
+          0
+        ]
+      },
+      "b": {
+        "ground": [
+          0.3,
+          0
+        ]
+      }
+    }
+  ],
+  "cables": [
+    {
+      "id": "top",
+      "a": {
+        "link": "s2",
+        "point": [
+          0.58309518948453,
+          0
+        ]
+      },
+      "b": {
+        "link": "s1",
+        "point": [
+          0.58309518948453,
+          0
+        ]
+      },
+      "rest_length": 0.5983877638478647,
+      "axial_stiffness": 5000,
+      "damping": 3
+    },
+    {
+      "id": "left",
+      "a": {
+        "link": "s1",
+        "point": [
+          -0.58309518948453,
+          0
+        ]
+      },
+      "b": {
+        "link": "s2",
+        "point": [
+          0.58309518948453,
+          0
+        ]
+      },
+      "rest_length": 0.9960159362549801,
+      "axial_stiffness": 5000,
+      "damping": 3
+    },
+    {
+      "id": "right",
+      "a": {
+        "link": "s2",
+        "point": [
+          -0.58309518948453,
+          0
+        ]
+      },
+      "b": {
+        "link": "s1",
+        "point": [
+          0.58309518948453,
+          0
+        ]
+      },
+      "rest_length": 0.9960159362549801,
+      "axial_stiffness": 5000,
+      "damping": 3
+    }
+  ],
+  "simulation": {
+    "dt": 0.0001,
+    "duration": 2,
+    "frame_stride": 100,
+    "event_tolerance": 1E-12
+  }
+}

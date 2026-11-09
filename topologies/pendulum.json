@@ -1,0 +1,54 @@
+{
+  "format_version": 1,
+  "name": "pendulum",
+  "description": "Slender bar (1 kg, 1 m) pinned at one end to the origin, released from rest 1 rad from hanging, standard gravity.",
+  "gravity": [
+    0,
+    -9.81
+  ],
+  "constraint_stabilization": 50,
+  "links": [
+    {
+      "id": "bar",
+      "role": "link",
+      "mass": 1,
+      "inertia": 0.08333333333333333,
+      "length": 1,
+      "pose": {
+        "x": 0.42073549240394825,
+        "y": -0.2701511529340698,
+        "theta": -0.5707963267948966
+      },
+      "twist": {
+        "vx": 0,
+        "vy": 0,
+        "omega": 0
+      }
+    }
+  ],
+  "pins": [
+    {
+      "id": "pivot",
+      "a": {
+        "link": "bar",
+        "point": [
+          -0.5,
+          0
+        ]
+      },
+      "b": {
+        "ground": [
+          0,
+          0
+        ]
+      }
+    }
+  ],
+  "cables": [],
+  "simulation": {
+    "dt": 0.0001,
+    "duration": 2,
+    "frame_stride": 100,
+    "event_tolerance": 1E-12
+  }
+}

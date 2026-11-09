@@ -2,6 +2,7 @@ using Tensegrity.Core.Integration;
 using Tensegrity.Core.Output;
 using Tensegrity.Core.Systems;
 using Tensegrity.RunFormat;
+using Tensegrity.Testing;
 using Tensegrity.Testing.Scenarios;
 using Tensegrity.Topology;
 
@@ -91,6 +92,17 @@ public sealed class ReferenceTopologyTests : IDisposable
         Assert.Equal(File.ReadAllText(path), TopologyFiles.Serialize(loaded));
         Assert.Equal(model.Simulation!.Dt, loaded.Simulation!.Dt);
         Assert.Equal(model.Description, loaded.Description);
+    }
+
+    [Theory]
+    [MemberData(nameof(Names))]
+    public void CommittedTopologyFileMatchesTheCatalog(string name)
+    {
+        // Regenerate with: dotnet run --project src/Tensegrity.Cli -- export-topologies
+        var path = Path.Combine(RepoPaths.Root, "topologies", name + ".json");
+
+        Assert.True(File.Exists(path), $"{path} is missing.");
+        Assert.Equal(TopologyFiles.Serialize(ReferenceTopologies.Create(name)), File.ReadAllText(path));
     }
 
     [Fact]
