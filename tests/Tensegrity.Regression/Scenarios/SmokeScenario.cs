@@ -1,17 +1,21 @@
+using Tensegrity.Testing;
+
 namespace Tensegrity.Regression.Scenarios;
 
 /// <summary>
-/// M0 placeholder scenario. There is no physics yet, so this produces a small
-/// deterministic set of values whose only purpose is to exercise the
-/// load → compare → report path of the regression harness end to end.
-/// Physical reference scenarios (free fall, spinning body, pendulum) join the
-/// suite in M1.
+/// Harness smoke test with no physics: a small deterministic set of values
+/// whose only purpose is to exercise load → compare → report end to end,
+/// independently of the physics scenarios. Its baseline was computed in
+/// Python, not by this code.
 /// </summary>
-public static class SmokeScenario
+public sealed class SmokeScenario : IReferenceScenario
 {
-    public const string Name = "smoke";
+    public string Name => "smoke";
 
-    public static IReadOnlyDictionary<string, double[]> Run()
+    public string Description =>
+        "M0 harness smoke test. sin(0.1*k) for k=0..9 and H_100 summed in order k=1..100. Values computed independently in Python 3 (math.sin, float repr), not by the C# scenario.";
+
+    public IReadOnlyDictionary<string, double[]> Run()
     {
         // sin(0.1·k) for k = 0..9: exercises an array quantity.
         var sineSamples = new double[10];

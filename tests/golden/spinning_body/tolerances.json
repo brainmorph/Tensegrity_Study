@@ -1,0 +1,12 @@
+{
+  // Hand-written (PLAN.md 7a). State is float64, so positions and angles use
+  // 1e-10 rather than float32 precision: tight enough to catch any change in
+  // the dynamics, loose enough for operation reordering at the 1e-15 level.
+  // Energies get an absolute floor because some samples are exactly zero.
+  "time": { "absolute": 1e-12, "relative": 0 },
+  "x": { "absolute": 1e-10, "relative": 0 },
+  "y": { "absolute": 1e-10, "relative": 0 },
+  "theta": { "absolute": 1e-10, "relative": 0 },
+  "kinetic_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "angular_momentum": { "absolute": 1e-10, "relative": 1e-10 }
+}

@@ -1,0 +1,16 @@
+{
+  // Hand-written (PLAN.md 7a). State is float64, so positions and angles use
+  // 1e-10 rather than float32 precision: tight enough to catch any change in
+  // the dynamics, loose enough for operation reordering at the 1e-15 level.
+  // Energies get an absolute floor because some samples are exactly zero.
+  "time": { "absolute": 1e-12, "relative": 0 },
+  "x": { "absolute": 1e-10, "relative": 0 },
+  "y": { "absolute": 1e-10, "relative": 0 },
+  "theta": { "absolute": 1e-10, "relative": 0 },
+  "omega": { "absolute": 1e-10, "relative": 0 },
+  "kinetic_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "potential_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  // Worst |E(t) - E(0)| over the run, J. Its value is ~1e-13 or below at
+  // dt = 1e-4; a growth to 1e-12 means the integration got worse.
+  "max_energy_drift": { "absolute": 1e-12, "relative": 0 }
+}

@@ -182,6 +182,8 @@ Purpose: when we make progress, we find out immediately if something that used t
 **Rules:**
 - A regression failure is a stop signal. Investigate before changing anything.
 - Updating a baseline requires: (1) an explicit explanation of why the output changed, (2) confirmation that the change is intended, and (3) the change recorded in the commit message. Never update a baseline just to make a test pass.
+- **How to update:** `TENSEGRITY_UPDATE_GOLDEN=<name>[,<name>…] dotnet test`. Each named scenario's `baseline.json` is rewritten from current output, and its test fails on purpose so an update never passes silently. Rerun without the variable once the diff has been reviewed. There is no "update all" option. `tolerances.json` is always written by hand and must exist first.
+- Every folder in `tests/golden/` must have a matching scenario, so a baseline cannot silently stop being checked.
 - Each milestone adds its reference topologies to the regression suite before it is considered done.
 - The suite runs with one command, for example `dotnet test` with the regression project included, and it must stay fast enough to run after every change (target: under 60 seconds at the current scale).
 
@@ -200,6 +202,7 @@ Purpose: when we make progress, we find out immediately if something that used t
 ### M1 — 2D numerics core
 - 2D vector and rotation utilities in `float64`. Planar link (mass, inertia, state). RK4 integrator. Gravity.
 - Tests 2 (free body), 3 (pendulum), 5 (RK4 convergence) green.
+- Pin constraints arrive in M2, so the M1 pendulum is a **test-side stand-in**: the link is integrated in its single angle about the pivot, using the Core RK4 and the Core link inertia, and the full link pose is reconstructed from it. M2 must reproduce the `pendulum` baseline with a real Lagrange-multiplier pin, and then the stand-in is retired.
 
 ### M2 — Planar tensegrity
 - Pin constraints (Lagrange multipliers, stabilization). Cables with `EA`, `L0`, damping, unilateral behavior, event splitting. Energy accounting.
