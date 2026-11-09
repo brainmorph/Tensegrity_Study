@@ -193,7 +193,7 @@ Purpose: when we make progress, we find out immediately if something that used t
 **Reference set (grows with milestones):**
 - M1: free-body fall, spinning body, pendulum.
 - M2: planar two-strut tensegrity (`planar_x` on pinned feet under gravity, `planar_x_free` floating), single cable oscillator (`cable_oscillator`, damped, through taut, recoiling and slack).
-- M5: two-link locking arm (locked and collapsed cases).
+- M5: two-link locking arm (`locking_arm` locked after a kick, `locking_arm_collapse` with the elbow tendon past its threshold).
 
 ## 8. Milestones
 
@@ -233,11 +233,13 @@ Completed milestones are struck through, with the commit that finished them. Any
 - Visual validation: `planar_x` holds its shape at rest over the full run, checked on rendered frames 0 and 200.
 - Left open, carried forward: recorded pin reaction forces are not drawn yet (M6, with the plots). Interactive use (mouse pan and zoom, folder picker) has only been checked by building and launching; a hands-on pass is still due.
 
-### M5 — Locking wing (2D)
+### ~~M5 — Locking wing (2D)~~ — done in `6a61114`, `51b9e26`, `b02ac32`, `b06b15b`, `09310a5`, `74d0b39`, `03752cc`, `3d607e5`
 - ~~**Carried from M3:** record actuators and their schedules in the manifest's `actuators` list (empty today), and their torques as frame channels.~~ Done in `b02ac32`: the list holds the same entries as `topology.actuators`, each actuator has an `actuator.<id>.torque` channel, and the energy series gains `actuator_work`.
 - ~~**Carried from M2:** joint actuators add their work to the energy balance (`PlanarSystem.TotalEnergy` covers kinetic, gravitational, cable elastic and cable-damping dissipation today), and optional per-joint friction (Section 4.3) adds its dissipation the same way.~~ Done in `6a61114` and `51b9e26`. An actuator is a torque couple across a pin (+τ on end A) following a piecewise-linear schedule whose breakpoints are split like cable events. Joint friction is viscous (`c·Δω`), so it needs no events.
-- Topology: a **two-to-three link planar arm** pinned at a shoulder, with cables forming a tendon network across the elbow (and wrist, if three links). This is the first real test of the central question: does a cable arrangement lock the joints in an extended pose with zero actuator torque?
-- Test 10 green. ~~Test 11 green.~~ Done in `b06b15b`: `PlanarSystem.SolveHoldingTorques` gives the torques that make every acceleration zero, and reports the leftover acceleration when the chosen joints cannot hold the pose. Effort curves recorded per configuration.
+- ~~Topology: a **two-to-three link planar arm** pinned at a shoulder, with cables forming a tendon network across the elbow (and wrist, if three links). This is the first real test of the central question: does a cable arrangement lock the joints in an extended pose with zero actuator torque?~~ Done in `09310a5` with two links (Section 9.3). `LockingArm` holds each joint with one tendon, running from a point behind and above the joint to the next link out: a body anchor at the shoulder and a post on the upper link at the elbow. Tensions are solved so the straight-out pose is an exact zero-torque equilibrium. Answer to the central question: **yes**. The pose is locked, and it stays locked until a tendon is 8.2% (elbow) or 8.5% (shoulder) longer than designed.
+- ~~Test 10 green.~~ Done in `74d0b39`. `ArmStatics` is the geometric prediction: the arm's potential energy in its two joint angles, independent of the simulator. Lengthening a tendon moves the arm along a branch of rest poses until a fold. The simulator holds within 1e-4 of the predicted rest-length scale (0.014 mm) and collapses 1e-4 past it. ~~Test 11 green.~~ Done in `b06b15b`: `PlanarSystem.SolveHoldingTorques` gives the torques that make every acceleration zero, and reports the leftover acceleration when the chosen joints cannot hold the pose. ~~Effort curves recorded per configuration.~~ Done in `03752cc`: the `effort` command, with the arm's curves in `topologies/README.md`. Holding the arm *straight* costs torque as soon as a tendon is 0.70% (elbow) or 2.25% (shoulder) long, but the *lock* lasts to the fold, because the arm droops to a new stable pose.
+- Regression: `locking_arm` (kicked, holds) and `locking_arm_collapse` (elbow tendon 10% long, falls) in `3d607e5`, as Section 7a lists. Visual validation: Godot renders the locked arm straight at t = 1.95 s, and the collapsing forearm slack-tendoned and hanging by t = 0.29 s. Frames were rendered with Godot's `--write-movie`.
+- Left open, carried forward: the three-link arm with a wrist (M6). Links pass through each other because there is no contact or joint limit, and the collapsing forearm swings through the upper link (M6, with the ground line). `SolveHoldingTorques` rejects redundant joints instead of giving the minimum-norm torques (M6, with parameter sweeps). Effort against joint angle, rather than against rest length, is not yet recorded (M6).
 
 ### M6 — Exploration tools
 - Perturbation inputs (impulse on a link, external force over time, ground drop with the ground line).
@@ -246,6 +248,9 @@ Completed milestones are struck through, with the commit that finished them. Any
 - Side-by-side run comparison in Godot.
 - **Carried from M4:** draw the recorded pin reaction forces (`pin.<id>.fx`, `.fy`) as arrows, scaled per run like cable tension.
 - Plots of energy, per-cable tension, and actuator effort over time (Godot or exported CSV).
+- **Carried from M5:** the three-link arm, adding a wrist with its own tendon (Section 9.3), checked against the same kind of statics prediction as test 10.
+- **Carried from M5:** link–link contact or joint limits. Without them, the collapsing forearm swings through the upper link. Treat them like the ground line, as a penalty or unilateral constraint with events.
+- **Carried from M5:** minimum-norm holding torques when the actuated joints are redundant (`SolveHoldingTorques` throws today), and effort curves against joint angle (`effort` sweeps rest length only).
 
 ### M7 — Refinement and Stage B (optional)
 - Adaptive RK (Dormand–Prince) or implicit integrator if stiff cases demand it.
