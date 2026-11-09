@@ -1,0 +1,15 @@
+<Project Sdk="Godot.NET.Sdk/4.7.0">
+  <!--
+    The Godot visualizer. Rendering only (PLAN.md section 1a, constraint 5):
+    its single project reference is the read-only run format, so it cannot
+    reach solver code. tests/Tensegrity.Core.Tests/Visualizer enforces this.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <RootNamespace>Tensegrity.Viewer</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../src/Tensegrity.RunFormat/Tensegrity.RunFormat.csproj" />
+  </ItemGroup>
+</Project>

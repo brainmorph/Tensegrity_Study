@@ -1,0 +1,10 @@
+<Project>
+  <!--
+    Opts out of the repository's central package management: Godot.NET.Sdk
+    adds its own GodotSharp and source-generator references with fixed
+    versions, all present in the local NuGet cache (see nuget.config).
+  -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,31 @@
+; Tensegrity viewer: plays back recorded runs. Rendering only.
+; PLAN.md section 1a, constraint 5: Godot has zero impact on the
+; simulation, so both physics engines are the no-op Dummy server.
+
+config_version=5
+
+[application]
+
+config/name="Tensegrity Viewer"
+config/description="Plays back runs recorded by the Tensegrity core."
+run/main_scene="res://Main.tscn"
+config/features=PackedStringArray("4.7", "C#")
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=800
+
+[dotnet]
+
+project/assembly_name="TensegrityViewer"
+
+[physics]
+
+2d/physics_engine="Dummy"
+3d/physics_engine="Dummy"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
