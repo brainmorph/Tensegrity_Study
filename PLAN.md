@@ -192,7 +192,7 @@ Purpose: when we make progress, we find out immediately if something that used t
 
 **Reference set (grows with milestones):**
 - M1: free-body fall, spinning body, pendulum.
-- M2: planar two-strut tensegrity, single cable oscillator.
+- M2: planar two-strut tensegrity (`planar_x` on pinned feet under gravity, `planar_x_free` floating), single cable oscillator (`cable_oscillator`, damped, through taut, recoiling and slack).
 - M5: two-link locking arm (locked and collapsed cases).
 
 ## 8. Milestones
@@ -209,16 +209,20 @@ Completed milestones are struck through, with the commit that finished them. Any
 - ~~Tests 2 (free body), 3 (pendulum), 5 (RK4 convergence) green.~~
 - ~~Pin constraints arrive in M2, so the M1 pendulum is a test-side stand-in: the link is integrated in its single angle about the pivot, and the full link pose is reconstructed from it.~~ Carried forward to M2.
 
-### M2 — Planar tensegrity
-- Pin constraints (Lagrange multipliers, stabilization). Cables with `EA`, `L0`, damping, unilateral behavior, event splitting. Energy accounting.
-- **Carried from M1:** reproduce the `pendulum` baseline with a real Lagrange-multiplier pin, then retire the test-side `ReducedPendulum` stand-in.
-- Topology: **planar two-strut tensegrity** — two crossing struts with four cables, the 2D analog of a tensegrity X. Simple, and it has a known prestressed equilibrium to check against.
-- Tests 1, 4, 6, 7, 8, 9 green.
+### ~~M2 — Planar tensegrity~~ — done in `213b85c`, `2c00e80`, `0842d02`, `2aa2974`
+- ~~Pin constraints (Lagrange multipliers, stabilization). Cables with `EA`, `L0`, damping, unilateral behavior, event splitting. Energy accounting.~~
+- ~~**Carried from M1:** reproduce the `pendulum` baseline with a real Lagrange-multiplier pin, then retire the test-side `ReducedPendulum` stand-in.~~ Reproduced to 5e-13 with no numeric baseline change.
+- ~~Topology: **planar two-strut tensegrity** — two crossing struts with four cables, the 2D analog of a tensegrity X. Simple, and it has a known prestressed equilibrium to check against.~~ Built floating (no gravity, four cables) and standing on two pinned feet under gravity (three cables).
+- ~~Tests 1, 4, 6, 7, 8, 9 green.~~
+- Left open, carried forward: topology JSON and strut-compression reporting (M3), the X's step size (M3), joint friction and actuator work in the energy balance (M5), global settling damping (M6).
 
 ### M3 — Run output and CLI
 - Manifest and frame writer, reader in Core for tests.
 - CLI: `dotnet run --project src/Tensegrity.Cli -- --topology topologies/planar_x.json --seed 42 --out runs/...`
 - Tests 12, 13 green. Test 14 documented per topology.
+- **Carried from M2:** topology JSON files (Section 9.7) that load into the same `PlanarModel` the C# generators (`PlanarTensegrityX`) build, so the CLI's `--topology` has something to read.
+- **Carried from M2:** report each strut's axial force and flag any strut in tension (Section 4.1) in the manifest diagnostics, alongside the event count, unresolved event steps and maximum pin residual the stepper and system already provide.
+- **Carried from M2:** for test 14, at `dt` = 1e-4 the planar X's energy-balance error falls only 12.6–12.8× per halving (its stiff cable modes put it at the start of RK4's asymptotic range; 5e-5 gives 14.4×). Decide its recorded `dt` from that study.
 
 ### M4 — Godot visualizer (2D first light)
 - Godot 4.7 mono project under `godot/`. Loads a run directory via `Tensegrity.RunFormat`. Renders links as bars at their recorded position and angle, cables as lines whose color follows recorded tension, pins as dots. Timeline slider.
@@ -226,11 +230,13 @@ Completed milestones are struck through, with the commit that finished them. Any
 - No physics nodes or physics-driven transforms in the Godot scene. Transforms are set directly from recorded data.
 
 ### M5 — Locking wing (2D)
+- **Carried from M2:** joint actuators add their work to the energy balance (`PlanarSystem.TotalEnergy` covers kinetic, gravitational, cable elastic and cable-damping dissipation today), and optional per-joint friction (Section 4.3) adds its dissipation the same way.
 - Topology: a **two-to-three link planar arm** pinned at a shoulder, with cables forming a tendon network across the elbow (and wrist, if three links). This is the first real test of the central question: does a cable arrangement lock the joints in an extended pose with zero actuator torque?
 - Tests 10, 11 green. Effort curves recorded per configuration.
 
 ### M6 — Exploration tools
 - Perturbation inputs (impulse on a link, external force over time, ground drop with the ground line).
+- **Carried from M2:** optional global damping for settling experiments (Section 4.3), off by default and recorded in the manifest when used. M2 did not need it: its equilibria are exact by construction.
 - Parameter sweeps: vary cable rest lengths and attachment points, record which configurations lock and how much effort each needs.
 - Side-by-side run comparison in Godot.
 - Plots of energy, per-cable tension, and actuator effort over time (Godot or exported CSV).
