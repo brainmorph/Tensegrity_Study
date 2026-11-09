@@ -1,0 +1,22 @@
+{
+  // Hand-written (PLAN.md 7a). State is float64 and the run is
+  // deterministic, so positions and velocities use 1e-10: tight enough to
+  // catch any change in the cable law, event location or integrator, loose
+  // enough for operation reordering. Switch times are bracketed to 1e-12 s,
+  // which moves results by ~1e-11 at most.
+  "time": { "absolute": 1e-12, "relative": 0 },
+  "y": { "absolute": 1e-10, "relative": 0 },
+  "vy": { "absolute": 1e-10, "relative": 0 },
+  // k = 2000 N/m turns a 1e-10 m change into 2e-7 N.
+  "tension": { "absolute": 1e-7, "relative": 1e-9 },
+  "kinetic_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "potential_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "elastic_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "dissipated_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  // Worst |E_total(t) - E_total(0)| over the run, J. Measured ~1.7e-12 at
+  // dt = 1e-4; growth past 1e-11 means the energy accounting got worse.
+  "max_energy_balance_error": { "absolute": 1e-11, "relative": 0 },
+  // Integer counts: any change in how many switches are found is a change.
+  "event_count": { "absolute": 0, "relative": 0 },
+  "unresolved_steps": { "absolute": 0, "relative": 0 }
+}

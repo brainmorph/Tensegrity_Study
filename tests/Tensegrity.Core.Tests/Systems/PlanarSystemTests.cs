@@ -11,11 +11,12 @@ public class PlanarSystemTests
         new([PlanarLink.SlenderBar("a", 1.0, 1.0), PlanarLink.SlenderBar("b", 2.0, 0.5)], PlanarSystem.StandardGravity);
 
     [Fact]
-    public void StateLayoutIsPositionsThenVelocities()
+    public void StateLayoutIsPositionsThenVelocitiesThenDissipatedEnergy()
     {
         var system = TwoBodies();
 
-        Assert.Equal(12, system.StateLength);
+        Assert.Equal(13, system.StateLength);
+        Assert.Equal(12, system.DissipatedEnergyIndex);
         Assert.Equal(0, system.PositionIndex(0));
         Assert.Equal(3, system.PositionIndex(1));
         Assert.Equal(6, system.VelocityIndex(0));
@@ -48,7 +49,8 @@ public class PlanarSystemTests
         system.Evaluate(0, state.Values, dy);
 
         Assert.Equal([0, 0, 0, 7, 8, 9], dy[..6]);
-        Assert.Equal([0, -9.81, 0, 0, -9.81, 0], dy[6..]);
+        Assert.Equal([0, -9.81, 0, 0, -9.81, 0], dy[6..12]);
+        Assert.Equal(0.0, dy[12]); // Nothing dissipates without cables.
     }
 
     [Fact]
@@ -67,7 +69,7 @@ public class PlanarSystemTests
     {
         var system = TwoBodies();
 
-        Assert.Throws<ArgumentException>(() => system.Evaluate(0, new double[6], new double[12]));
+        Assert.Throws<ArgumentException>(() => system.Evaluate(0, new double[6], new double[13]));
         Assert.Throws<ArgumentException>(() => system.GetPose(new double[6], 0));
     }
 
@@ -79,7 +81,7 @@ public class PlanarSystemTests
         Assert.Throws<ArgumentException>(() => new PlanarSystem([], Vector2d.Zero));
         Assert.Throws<ArgumentException>(() => new PlanarSystem([a, PlanarLink.SlenderBar("a", 2, 2)], Vector2d.Zero));
         Assert.Throws<ArgumentOutOfRangeException>(() => new PlanarSystem([a], new Vector2d(double.NaN, 0)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => TwoBodies().GetPose(new double[12], 2));
+        Assert.Throws<ArgumentOutOfRangeException>(() => TwoBodies().GetPose(new double[13], 2));
     }
 
     [Fact]

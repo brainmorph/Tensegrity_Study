@@ -19,6 +19,9 @@ public class ReferenceScenarioTests
         new FreeFallScenario(),
         new SpinningBodyScenario(),
         new PendulumScenario(),
+
+        // M2
+        new CableOscillatorScenario(),
     ];
 
     public static TheoryData<string> All() => new(Scenarios.Select(s => s.Name));

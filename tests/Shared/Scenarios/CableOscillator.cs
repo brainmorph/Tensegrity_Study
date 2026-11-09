@@ -157,3 +157,60 @@ public sealed class CableOscillatorTheory
         }
     }
 }
+
+/// <summary>
+/// Tests 4, 7 and 8 (PLAN.md section 7) reference run: the hanging cable
+/// with damping, released from 3 static stretches below equilibrium, so
+/// every period passes through all three cable modes: taut, recoiling
+/// (stretched but unloading faster than the spring) and slack. Protects the
+/// cable law, event splitting and energy accounting together.
+/// </summary>
+public sealed class CableOscillatorScenario : IReferenceScenario
+{
+    public const double Dt = 1e-4;
+    public const long Steps = 20_000;
+    public const long Stride = 1_000;
+    public const double Damping = 8.0;
+    public const double AmplitudeOverStretch = 3.0;
+
+    public string Name => "cable_oscillator";
+
+    public string Description =>
+        "2 kg link hanging from a ground anchor by one cable at its center of mass (L0 1 m, EA 2000 N, c 8 N s/m), released at rest 3 static stretches below equilibrium, standard gravity. Bounces through taut, recoiling and slack modes. RK4 with event splitting (1e-12 s), dt 1e-4 s, 2 s, sampled every 0.1 s.";
+
+    public IReadOnlyDictionary<string, double[]> Run()
+    {
+        var system = CableOscillator.CreateSystem(Damping);
+        var theory = CableOscillator.CreateTheory(Damping);
+        var state = CableOscillator.CreateState(system, theory.EquilibriumY - (AmplitudeOverStretch * theory.StaticStretch), 0.0);
+        var stepper = new EventSplittingStepper(new Rk4Integrator(), system);
+        var recorder = new SampleRecorder();
+        var tension = new double[1];
+        var initialEnergy = system.TotalEnergy(state.Values);
+        var maxBalanceError = 0.0;
+
+        FixedStepRunner.Run(state, stepper, Dt, Steps, (step, s) =>
+        {
+            maxBalanceError = Math.Max(maxBalanceError, Math.Abs(system.TotalEnergy(s.Values) - initialEnergy));
+            if (step % Stride != 0)
+            {
+                return;
+            }
+
+            system.GetCableTensions(s.Values, tension);
+            recorder.Add("time", s.Time);
+            recorder.Add("y", system.GetPose(s.Values, 0).Position.Y);
+            recorder.Add("vy", system.GetTwist(s.Values, 0).Linear.Y);
+            recorder.Add("tension", tension[0]);
+            recorder.Add("kinetic_energy", system.KineticEnergy(s.Values));
+            recorder.Add("potential_energy", system.GravitationalPotentialEnergy(s.Values));
+            recorder.Add("elastic_energy", system.CableElasticEnergy(s.Values));
+            recorder.Add("dissipated_energy", system.DissipatedEnergy(s.Values));
+        });
+
+        recorder.Add("max_energy_balance_error", maxBalanceError);
+        recorder.Add("event_count", stepper.EventCount);
+        recorder.Add("unresolved_steps", stepper.UnresolvedSteps);
+        return recorder.ToOutput();
+    }
+}

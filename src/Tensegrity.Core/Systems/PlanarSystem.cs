@@ -9,12 +9,18 @@ namespace Tensegrity.Core.Systems;
 /// A set of planar rigid links under uniform gravity, joined by pin
 /// constraints and cables, in maximal coordinates.
 ///
-/// State layout for n bodies (length 6n), positions first, then velocities:
+/// State layout for n bodies (length 6n + 1), positions first, then
+/// velocities, then the energy dissipated so far:
 /// <code>
-/// [ x0 y0 θ0  x1 y1 θ1 … | ẋ0 ẏ0 θ̇0  ẋ1 ẏ1 θ̇1 … ]
+/// [ x0 y0 θ0  x1 y1 θ1 … | ẋ0 ẏ0 θ̇0  ẋ1 ẏ1 θ̇1 … | E_diss ]
 /// </code>
 /// Splitting positions from velocities keeps the generalized-coordinate block
-/// contiguous for the constraint solver.
+/// contiguous for the constraint solver. E_diss is integrated with the rest
+/// of the state, so the energy balance (PLAN.md 4.3)
+/// <code>
+/// kinetic + gravitational + elastic + dissipated = constant
+/// </code>
+/// holds to integrator accuracy; see <see cref="TotalEnergy"/>.
 ///
 /// Pins are enforced with Lagrange multipliers (PLAN.md 4.2, 9.1). At every
 /// derivative evaluation the constraint forces are solved from
@@ -122,7 +128,10 @@ public sealed class PlanarSystem : ISwitchedSystem
     public int CoordinateCount => DofPerBody * links.Length;
 
     /// <summary>Length of the state vector: coordinates plus velocities.</summary>
-    public int StateLength => 2 * CoordinateCount;
+    public int StateLength => (2 * CoordinateCount) + 1;
+
+    /// <summary>Index of the cumulative dissipated energy in the state vector.</summary>
+    public int DissipatedEnergyIndex => 2 * CoordinateCount;
 
     public int PositionIndex(int body) => DofPerBody * CheckBody(body);
 
@@ -170,7 +179,7 @@ public sealed class PlanarSystem : ISwitchedSystem
         var n = CoordinateCount;
 
         // dq/dt = v
-        state[n..].CopyTo(derivative[..n]);
+        state.Slice(n, n).CopyTo(derivative[..n]);
 
         if (!modesLatched)
         {
@@ -188,6 +197,8 @@ public sealed class PlanarSystem : ISwitchedSystem
             derivative[n + i + 1] = forces[i + 1] / link.Mass;
             derivative[n + i + 2] = forces[i + 2] / link.MomentOfInertia;
         }
+
+        derivative[DissipatedEnergyIndex] = DissipatedPower(state);
     }
 
     /// <summary>
@@ -338,6 +349,37 @@ public sealed class PlanarSystem : ISwitchedSystem
 
         return total;
     }
+
+    /// <summary>Elastic energy stored in the cables, Σ ½·k·(L − L0)² over stretched cables, J.</summary>
+    public double CableElasticEnergy(ReadOnlySpan<double> state)
+    {
+        CheckLength(state.Length);
+        var total = 0.0;
+        for (var c = 0; c < cables.Length; c++)
+        {
+            total += ElasticEnergy(cables[c], CableGeometry(state, c).Length);
+        }
+
+        return total;
+    }
+
+    /// <summary>Energy dissipated by cable damping since the start of the run, J.</summary>
+    public double DissipatedEnergy(ReadOnlySpan<double> state)
+    {
+        CheckLength(state.Length);
+        return state[DissipatedEnergyIndex];
+    }
+
+    /// <summary>Kinetic + gravitational + cable elastic energy, J.</summary>
+    public double MechanicalEnergy(ReadOnlySpan<double> state) =>
+        KineticEnergy(state) + GravitationalPotentialEnergy(state) + CableElasticEnergy(state);
+
+    /// <summary>
+    /// Mechanical energy plus energy dissipated so far, J. With no actuators
+    /// or other external work it is conserved; its drift measures the
+    /// integration error (PLAN.md 4.3, test 7).
+    /// </summary>
+    public double TotalEnergy(ReadOnlySpan<double> state) => MechanicalEnergy(state) + DissipatedEnergy(state);
 
     /// <summary>Total angular momentum about a fixed world point, kg·m²/s.</summary>
     public double AngularMomentum(ReadOnlySpan<double> state, Vector2d about)
@@ -512,6 +554,37 @@ public sealed class PlanarSystem : ISwitchedSystem
         var direction = span / length;
         var rate = Vector2d.Dot(direction, PointVelocity(state, cableB[cable]) - PointVelocity(state, cableA[cable]));
         return (length, rate, direction);
+    }
+
+    /// <summary>
+    /// Rate of energy loss in the cable dampers in the latched modes, W.
+    /// Power into a cable is T·L̇ and its stored energy changes at k·Δ·L̇, so
+    /// the damper takes (T − k·Δ)·L̇: c·L̇² when taut, −k·Δ·L̇ when recoiling
+    /// (positive, since then L̇ &lt; −k·Δ/c &lt; 0), and nothing when slack.
+    /// </summary>
+    private double DissipatedPower(ReadOnlySpan<double> state)
+    {
+        var total = 0.0;
+        for (var c = 0; c < cables.Length; c++)
+        {
+            var cable = cables[c];
+            var (length, rate, _) = CableGeometry(state, c);
+            var stretch = length - cable.RestLength;
+            total += latchedModes[c] switch
+            {
+                CableMode.Taut => cable.Damping * rate * rate,
+                CableMode.Recoiling => -cable.Stiffness * stretch * rate,
+                _ => 0.0,
+            };
+        }
+
+        return total;
+    }
+
+    private static double ElasticEnergy(Cable cable, double length)
+    {
+        var stretch = length - cable.RestLength;
+        return stretch > 0 ? 0.5 * cable.Stiffness * stretch * stretch : 0.0;
     }
 
     private CableMode CableModeAt(ReadOnlySpan<double> state, int cable)
