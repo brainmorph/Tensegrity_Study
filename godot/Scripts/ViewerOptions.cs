@@ -7,10 +7,13 @@ namespace Tensegrity.Viewer;
 /// </summary>
 public sealed class ViewerOptions
 {
-    public const string Usage = "usage: -- [--run <run directory>] [--fidelity-dump]";
+    public const string Usage = "usage: -- [--run <run directory>] [--play] [--fidelity-dump]";
 
     /// <summary>The run directory to open, absolute; null opens the folder picker.</summary>
     public string? RunDirectory { get; private init; }
+
+    /// <summary>Start playback as soon as the run opens.</summary>
+    public bool Play { get; private init; }
 
     /// <summary>
     /// Headless render-fidelity check (PLAN.md section 7, test 16): show
@@ -27,12 +30,16 @@ public sealed class ViewerOptions
     {
         string? run = null;
         var dump = false;
+        var play = false;
         for (var i = 0; i < args.Count; i++)
         {
             switch (args[i])
             {
                 case "--run" when i + 1 < args.Count:
                     run = args[++i];
+                    break;
+                case "--play":
+                    play = true;
                     break;
                 case "--fidelity-dump":
                     dump = true;
@@ -50,6 +57,7 @@ public sealed class ViewerOptions
         return new ViewerOptions
         {
             RunDirectory = run is null ? null : Path.GetFullPath(run, launchDirectory),
+            Play = play,
             FidelityDump = dump,
         };
     }
