@@ -1,0 +1,250 @@
+# Tensegrity Study — Plan
+
+## 1. Goal
+
+Explore how geometry and physics combine to produce stable truss-like shapes that hold with very little effort. The long-term target is a highly realistic but simplified model of a bird wing, in which locking happens through tendon-like cables and joint geometry rather than muscle force.
+
+This is an exploratory study. There is no specific bird being modeled. The aim is to build intuition for how stable, low-effort configurations arise.
+
+**Staged scope:**
+- **Stage A (now): 2D, planar.** Rigid links in a plane, pin joints, cables, gravity, and optional joint actuators. Enough to show tensegrity-style stability and over-center locking.
+- **Stage B (later): 3D.** Full 3D rigid bodies, the same physics extended to 3D. The 2D work is designed so the body and force interfaces can be extended without rewriting the integrator.
+
+Two cooperating parts:
+
+1. **Core simulation (C#)** — a physically realistic, deterministic simulation. It writes a **run output** to disk.
+2. **Visualizer (Godot 4.7, mono)** — loads run output and plays it back: rendering, camera or view control, timeline scrubbing, tension coloring, and comparison of runs.
+
+The simulation is the source of truth. Physical realism is the top priority for the core; visual polish comes second. Godot has zero impact on simulation logic: it only reads and presents recorded runs (see constraint 5 in Section 1a). This keeps the sim testable headless and lets runs be re-rendered without re-simulating.
+
+## 1a. Project constraints
+
+These rules apply to every milestone and every change:
+
+1. **No third-party downloads.** Do not download or install any library, package, SDK, binary, or code from outside the machine. Use only what is already installed or cached locally (see Section 3).
+2. **Web access is allowed for documentation only.** Browsing and downloading documentation (specs, API references, papers) is fine. Downloading code or libraries from that documentation is not.
+3. **Build what we need.** If a capability is missing locally, implement it in this repo rather than pulling a dependency. Prefer the .NET base class library (`System.Numerics`, `System.Text.Json`, etc.) over anything else.
+4. **Anything new that needs a download requires explicit approval first.**
+5. **Godot has zero impact on simulation logic.** All physics happens in `Tensegrity.Core`. Godot only reads recorded run output and renders it. Specifically:
+   - Godot does not run a physics engine (no `RigidBody*`, `CharacterBody*`, `PhysicsServer` calls, Jolt/Godot Physics, or collision shapes that affect motion).
+   - Godot does not compute, correct, smooth, or extrapolate any state that changes what the run means. Positions, orientations, and tensions are shown exactly as recorded.
+   - Any quantity Godot displays (e.g. tension colors, energy plots) must be written by the core into the run output. Godot does not derive physics quantities itself.
+   - Godot does not write back into the simulation or its inputs. The only data flow is `Core → run directory → Godot`.
+   - Godot does not reference `Tensegrity.Core`. It references only the read-only run-format project (see Section 5), so it cannot call solver code.
+6. **Warn before big downloads or complex tasks.** Before downloading anything large (roughly over 100 MB, or any multi-file dataset) or starting a complex, long, or multi-step task that will take a while or change many files, warn the user first and wait for a go-ahead. Name what it is, its approximate size or scope, and why it's needed. Documentation pages and small reference files are exempt.
+7. **Regression protection.** Every milestone must leave the regression suite green. Changes that alter a recorded baseline must be deliberate and explained (see Section 7a). Never update a baseline just to make a failing test pass.
+8. **Google-style commit messages.** Follow Google's CL description conventions ([eng-practices](https://google.github.io/eng-practices/review/developer/cl-descriptions.html)):
+   - **First line:** a short summary of specifically what the change does, as a complete sentence written as an imperative order (e.g. `Add RK4 integrator`, not `Added` or `Adds`). Keep it at 72 characters or fewer. Avoid vague summaries such as `Fix bug` or `Update code`; say what was broken or what was added.
+   - **Blank line**, then a **body** that explains what changed and why, in plain prose, wrapped at about 72 characters. Include the reason for any golden-baseline change (Rule 7).
+   - **Scope:** one logical change per commit. Don't mix refactors with behavior changes.
+   - **Trailers** are added at the end as required by the session (currently `Co-Authored-By`).
+   - Commits happen only when you ask for them.
+
+Local resources in scope: .NET SDK 8.0 and 10.0; Godot 4.7 mono and its `GodotSharp` assemblies; the NuGet global cache at `~/.nuget/packages` (already contains xUnit, Microsoft.NET.Test.Sdk, coverlet, MathNet.Numerics, and others).
+
+## 2. Non-goals (for now)
+
+- 3D physics (deferred to Stage B).
+- Real-time interactive simulation inside Godot (GDExtension binding). Revisit after the offline pipeline works.
+- Automated form-finding / optimization of topologies. Hand-authored topologies first.
+- Material fatigue, plasticity, or large-deformation fracture.
+- Modeling a specific real bird. Parameters are generic and chosen for exploration.
+- Feather aerodynamics and flight. The wing is modeled as a mechanical structure only.
+- Publishing or packaging for end users.
+
+## 3. Environment
+
+- .NET SDK 10.0.x (present: `dotnet 10.0.114`), also 8.0.128.
+- Godot 4.7 stable, **mono build** (C#-capable), at `~/Desktop/Godot_v4.7-stable_mono_linux_x86_64/Godot_v4.7-stable_mono_linux.x86_64`. Verified: reports `4.7.stable.mono.official`. Ships `GodotSharp/` alongside it.
+- OS: Linux. All paths and commands in this plan assume Linux.
+- Repo is currently empty and not under git. Decide whether to `git init` before Milestone 1 (recommended).
+- Test framework: **xUnit** is already in the local NuGet cache. Before M0 relies on it, verify an offline restore works (`dotnet restore --source ~/.nuget/packages`, or equivalent) without contacting nuget.org. If it does not restore offline, fall back to a small in-repo test runner built on the base class library.
+
+## 4. Physics model (Stage A: 2D)
+
+### 4.1 Elements
+
+All quantities are `float64` (double) inside the core. Nothing is downcast until the output writer. Units are SI in the plane: meters, kilograms, seconds, newtons, newton-meters, radians.
+
+- **Link (strut) — rigid body in 2D.** Each link is a planar rigid body:
+  - State: center-of-mass position `(x, y)`, orientation angle `θ`, and velocities `(ẋ, ẏ, θ̇)`. Three degrees of freedom per link.
+  - Mass `m` and scalar moment of inertia `I` about the center of mass, computed from geometry (slender bar: `I = m·ℓ²/12`).
+  - Compression-only in the intended design. A strut under tension is reported as a configuration error for the chosen topology. An optional debug flag allows tension to validate the solver.
+  - Attachment points are body-fixed offsets in the link frame, so cables and joints act at the true points and produce moments.
+- **Pin joint.** Connects a point on one body to a point on another body, or to the ground frame (a fixed pivot). Enforced as a holonomic constraint: the two attachment points coincide. Modeled with Lagrange multipliers (the constraint reaction forces are part of the solution, not inputs).
+- **Joint actuator (muscle stand-in).** A torque applied at a pin joint as a function of time or a feedback rule. Used to ask: how much effort does it take to hold or move a configuration? Default is zero torque, so the structure has to hold itself.
+- **Cable — elastic tendon.** Connects two body-fixed attachment points.
+  - Axial stiffness `EA` and rest length `L0`. Tension `T = max(0, k·(L − L0) + c·L̇)`, with `k = EA / L0` and `c` a viscous damping coefficient.
+  - Unilateral: a slack cable (`L < L0`) exerts zero force. Slack/taut transitions are **events** (see 4.2).
+  - Optional cable mass, lumped at its ends. Default: off.
+- **Gravity**: uniform `g = (0, −9.81)` m/s² applied to each body's center of mass.
+- **Ground line** at `y = 0`: contact via penalty spring-damper with Coulomb friction. Deferred to M6 unless a topology needs it earlier (see Section 9).
+- **Prestress**: each cable's rest length `L0` is shorter than its geometric length in the initial configuration, so the structure is in self-equilibrium under gravity. The prestress magnitude is part of the topology file.
+
+**Limitations of rigid links:** they cannot buckle or bend, so the model covers the rigid-strut regime only. This is acceptable for the first study and should be stated in any result.
+
+### 4.2 Integration and constraints
+
+- **Method: classical fixed-step Runge–Kutta 4 (RK4)** on the dynamics. This is the minimum accepted integrator.
+- **Constraint handling (decision needed, see Section 9):** pin joints are holonomic constraints. Default approach:
+  - Maximal coordinates `(x, y, θ)` per body, with pin constraints enforced through Lagrange multipliers. Each RK4 stage solves a small linear system for the constraint forces.
+  - Constraint drift is controlled by a Baumgarte-style stabilization term or by projecting positions and velocities back onto the constraint manifold after each step. The drift is logged and tested.
+- **Step size**: fixed `dt`, chosen per topology from a stability and convergence study (Section 7). Start point: `dt` ≤ 1e-4 s for stiff prestressed cables; verified rather than assumed.
+- **Non-smooth cable forces**: the `max(0, ·)` at slack and taut transitions causes RK4 to lose its order if a step straddles a transition. Plan:
+  1. Detect sign change of `L − L0` for each cable during a step.
+  2. Locate the crossing time by bisection (or secant) to a tolerance well below `dt`.
+  3. Split the step at the crossing and continue. This preserves RK4 accuracy across events.
+  - A fallback is a C¹-smoothed `softplus` transition with a tunable width. It is not the default because it changes the physics slightly.
+- **Determinism**: fixed element iteration order, no parallel reductions with non-deterministic ordering, seeded RNG if any randomness is used. Same input + seed → bit-identical output on the same platform.
+- **Solver interface**: `IIntegrator.Step(State, dt, Derivatives)`. RK4 is the first implementation. The interface must let us swap in an adaptive or implicit method later without touching element code.
+
+### 4.3 Damping and energy
+
+- **Physical damping, not numerical**: cable viscous damping `c` (from a damping ratio per cable, default small). Joint friction is off by default and can be added as a per-joint parameter.
+- **Global damping** only for settling experiments, and it is off in realistic runs unless the topology file requests it. Its presence is recorded in the manifest.
+- **Energy accounting every frame**: kinetic (translational + rotational), gravitational potential, elastic potential stored in cables, ground contact energy, work done by actuators, and cumulative dissipated energy from cable damping, joint friction, and contact. Energy balance is checked against the work from external inputs.
+
+## 5. Solution architecture
+
+```
+Tensegrity_Study/
+├─ PLAN.md
+├─ src/
+│  ├─ Tensegrity.Core/        # pure C#: 2D rigid links, pins, cables, actuators, RK4, constraints, events, energy, run writer
+│  ├─ Tensegrity.RunFormat/   # read-only shared data types + manifest/frame reader (no solver code)
+│  ├─ Tensegrity.Topology/    # topology definitions + generators (planar tensegrity, wing chains, ...)
+│  └─ Tensegrity.Cli/         # `dotnet run` entry: load topology + params, run sim, write run dir
+├─ tests/
+│  └─ Tensegrity.Core.Tests/  # unit, analytic, convergence, energy, determinism, isolation
+├─ topologies/                # hand-authored topology JSON files
+├─ runs/                      # run output (git-ignored)
+└─ godot/                     # Godot 4.7 mono project: rendering only, references Tensegrity.RunFormat
+```
+
+- `Tensegrity.Core` has no dependency on Godot or any UI.
+- `Tensegrity.RunFormat` holds the file format types and the reader. It contains no physics, and both the core (writer) and Godot (reader) depend on it. Keeping it separate means Godot never references the solver.
+- `Topology` produces the same `Structure` object regardless of whether it came from code or JSON.
+- The CLI is the only place with file-system side effects beyond run output.
+- The `godot/` project contains scenes, materials, view and camera, timeline UI, and playback code only. Any physics-related code in it is a defect.
+- Stage B (3D) will add a 3D body type and 3D forces. The integrator and constraint layer are written against a generic state vector so they carry over.
+
+## 6. Run output format
+
+Each run is a directory, e.g. `runs/2026-11-09_planar-x_seed42/`:
+
+- `manifest.json` — human-readable, versioned:
+  - `format_version`, `created_utc`, sim version (git SHA if available), `dimensions: 2`
+  - `units` (SI, planar)
+  - `integrator` (`"rk4"`), `constraint_method`, `dt`, `total_steps`, `frame_stride`, `frame_count`
+  - `event_tolerance` (time tolerance for cable slack/taut events)
+  - `gravity`, `ground` parameters, damping parameters, actuator schedule, RNG seed
+  - `topology` — links (id, mass, inertia, attachment points in body frame, initial pose), pins (id, body/ground refs, local points), cables (id, endpoint refs, `L0`, `EA`, damping, prestress), actuators
+  - `diagnostics` — energy series, constraint residual maximum, number of event splits, any compression-violation flags for links
+- `frames.bin` — little-endian binary, one frame after another. Per link: `x`, `y`, `θ` (3×`float32`). Optionally per cable: tension (1×`float32`). Per pin: reaction force (2×`float32`), useful for showing where effort goes. Layout is documented in the manifest (`frame_layout`) so Godot can read it without guessing.
+
+Why this split: the manifest is small and inspectable; frames are large and binary. Godot's reader parses the JSON and reads floats from a `FileAccess`.
+
+Precision: state is `float64` in the sim. Frames are `float32` for size; the energy series and diagnostics are `float64`.
+
+## 7. Validation strategy
+
+Tests live in `tests/Tensegrity.Core.Tests`. Realism is verified by these tests, not assumed.
+
+1. **Unit — force laws**: cable tension-only behavior, slack cable exerts zero force, damping sign correct, link body-frame to world-frame transforms correct.
+2. **Analytic — free body**: a free link under gravity follows `y(t) = y0 − ½gt²` (within RK4 error). A free link spinning at a set angular velocity conserves angular momentum and kinetic energy.
+3. **Analytic — pendulum**: a single link pinned at one end with small amplitude matches the closed-form period `T = 2π·√(I_pivot / (m·g·d))`, where `d` is the distance from pivot to center of mass.
+4. **Analytic — cable oscillator**: a single mass on a cable with known `k` and `m` matches `ω = √(k/m)` and the damped decay rate.
+5. **Convergence (RK4 order)**: halving `dt` reduces global error on a smooth test problem by ≈16×. This is the test that proves the integrator is what we claim.
+6. **Constraint**: pin constraint residual stays below tolerance over a long run, with drift controlled as designed.
+7. **Energy**: with damping off and no actuators, total mechanical energy drift is below a set tolerance and scales as `dt⁴` on smooth segments.
+8. **Event handling**: a cable that goes slack and taut again produces the same trajectory under `dt` halving within tolerance.
+9. **Static equilibrium — planar tensegrity**: the planar two-strut topology (Section 8, M2) holds its prestressed shape at rest with no actuators.
+10. **Over-center lock — DEFINITION: a pose is locked if it is a stable equilibrium at zero actuator torque.** Test: the structure stays put with zero torque, and returns to the pose after a small perturbation. A two-link chain with a cable across the joint must pass this, and must collapse when the cable's rest length is increased past the threshold. The threshold matches the geometric prediction within tolerance.
+11. **Effort measurement — DECIDED metric: required actuator torque at each joint** to hold a pose still (the minimum torque that keeps joint angular acceleration at zero). Zero means the structure holds itself. The torque is recorded per pose and per topology. Elastic energy and lock margin are recorded as secondary diagnostics, not as the primary measure.
+12. **Determinism**: same topology + seed run twice produces byte-identical `frames.bin`.
+13. **Round-trip**: writing a run then reading it back reproduces positions within `float32` precision.
+14. **Stability sweep**: `dt` halved produces converged results; the chosen `dt` for each topology is recorded with its evidence.
+15. **Isolation (automated)**: a test scans the `godot/` project and fails on any reference to `Tensegrity.Core`, any physics node or `PhysicsServer` use, or any write to a run directory.
+16. **Render fidelity**: a headless check loads a run and confirms the Godot transforms equal the recorded frame values exactly (or within `float32` precision).
+
+Visual validation (from M4 onward): the Godot view of a known structure visibly holds shape at rest, and locks and releases as predicted.
+
+## 7a. Regression framework
+
+Purpose: when we make progress, we find out immediately if something that used to work has broken. This sits alongside the validation tests in Section 7, which check physics correctness against theory. Regression checks compare the current output against recorded known-good results.
+
+**Structure:**
+- `tests/Tensegrity.Regression/` (or a `Regression` folder inside the test project): a test suite that runs each reference topology with a fixed seed and compares the result against a stored **golden baseline**.
+- `tests/golden/<topology>/`: baseline files. Each baseline holds the manifest, a summary of key diagnostics (final pose, energy series, max constraint residual, lock torques), and a short sample of frames. Baselines are committed to git, so every change to them is visible in history.
+- Comparison uses explicit tolerances per quantity, stored with the baseline. Positions and angles use a tolerance in `float32` precision; energy and torques use a relative tolerance. Exact byte equality is used where determinism is required (test 12).
+
+**Rules:**
+- A regression failure is a stop signal. Investigate before changing anything.
+- Updating a baseline requires: (1) an explicit explanation of why the output changed, (2) confirmation that the change is intended, and (3) the change recorded in the commit message. Never update a baseline just to make a test pass.
+- Each milestone adds its reference topologies to the regression suite before it is considered done.
+- The suite runs with one command, for example `dotnet test` with the regression project included, and it must stay fast enough to run after every change (target: under 60 seconds at the current scale).
+
+**Reference set (grows with milestones):**
+- M1: free-body fall, spinning body, pendulum.
+- M2: planar two-strut tensegrity, single cable oscillator.
+- M5: two-link locking arm (locked and collapsed cases).
+
+## 7b. Milestone 0 addition
+
+## 8. Milestones
+
+### M0 — Scaffolding
+- `git init`, `.gitignore` (bin/, obj/, runs/, .godot/, .import/), empty solution `Tensegrity.sln` with the projects above (Core, RunFormat, Topology, Cli, and the test project).
+- Regression harness in place (Section 7a): the regression project, the `tests/golden/` folder, the tolerance comparison helper, and one smoke-test baseline.
+- Build and test pass, including the regression suite.
+
+### M1 — 2D numerics core
+- 2D vector and rotation utilities in `float64`. Planar link (mass, inertia, state). RK4 integrator. Gravity.
+- Tests 2 (free body), 3 (pendulum), 5 (RK4 convergence) green.
+
+### M2 — Planar tensegrity
+- Pin constraints (Lagrange multipliers, stabilization). Cables with `EA`, `L0`, damping, unilateral behavior, event splitting. Energy accounting.
+- Topology: **planar two-strut tensegrity** — two crossing struts with four cables, the 2D analog of a tensegrity X. Simple, and it has a known prestressed equilibrium to check against.
+- Tests 1, 4, 6, 7, 8, 9 green.
+
+### M3 — Run output and CLI
+- Manifest and frame writer, reader in Core for tests.
+- CLI: `dotnet run --project src/Tensegrity.Cli -- --topology topologies/planar_x.json --seed 42 --out runs/...`
+- Tests 12, 13 green. Test 14 documented per topology.
+
+### M4 — Godot visualizer (2D first light)
+- Godot 4.7 mono project under `godot/`. Loads a run directory via `Tensegrity.RunFormat`. Renders links as bars at their recorded position and angle, cables as lines whose color follows recorded tension, pins as dots. Timeline slider.
+- Rendering uses only recorded frames: no interpolation between frames unless explicitly labeled visual-only. Default is frame-exact display.
+- No physics nodes or physics-driven transforms in the Godot scene. Transforms are set directly from recorded data.
+
+### M5 — Locking wing (2D)
+- Topology: a **two-to-three link planar arm** pinned at a shoulder, with cables forming a tendon network across the elbow (and wrist, if three links). This is the first real test of the central question: does a cable arrangement lock the joints in an extended pose with zero actuator torque?
+- Tests 10, 11 green. Effort curves recorded per configuration.
+
+### M6 — Exploration tools
+- Perturbation inputs (impulse on a link, external force over time, ground drop with the ground line).
+- Parameter sweeps: vary cable rest lengths and attachment points, record which configurations lock and how much effort each needs.
+- Side-by-side run comparison in Godot.
+- Plots of energy, per-cable tension, and actuator effort over time (Godot or exported CSV).
+
+### M7 — Refinement and Stage B (optional)
+- Adaptive RK (Dormand–Prince) or implicit integrator if stiff cases demand it.
+- Form-finding by dynamic relaxation from a loose initial guess.
+- Stage B: 3D rigid bodies, same topologies extended to 3D.
+- Export a single run to a standalone video/GIF.
+
+## 9. Open questions
+
+1. **Constraint method — DECIDED: Lagrange multipliers + stabilization.** Each RK4 stage solves a small linear system for constraint forces. Alternatives considered: penalty joints (simpler, but adds artificial compliance that blurs the locking threshold) and reduced coordinates (exact for open chains, but hard for the closed loops in the planar tensegrity).
+2. **Ground contact — DECIDED: defer to M6.** The locking question does not need a floor, so the core is validated in free space first.
+3. **Wing topology — DECIDED: two links, one elbow, first.** Three links (adding the wrist) follows once the two-link locking behavior is validated.
+4. **Cable mass — DECIDED: massless for now.** Cable inertia can be added later as an option, once a test shows it matters.
+5. **Frame format — DECIDED: binary `frames.bin` + JSON `manifest.json`.** A CSV export tool for small runs is added for inspection.
+6. **Godot language — DECIDED: C#.** The visualizer references only `Tensegrity.RunFormat`, so the reader and data types are shared with the sim without exposing solver code.
+7. **Topology source — DECIDED: JSON files, generated from C# helpers.** Topologies are stored as JSON in `topologies/`. C# generators in `Tensegrity.Topology` build common shapes and export them, and both paths produce the same `Structure`.
+
+## 10. Immediate next steps
+
+1. Confirm answers to Section 9 (or accept defaults).
+2. Run M0: git init, solution scaffolding, empty tests passing.
+3. M1: 2D numerics core with RK4, verified by tests 2, 3, and 5 before any tensegrity physics is written.
