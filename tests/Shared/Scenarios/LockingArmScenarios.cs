@@ -22,6 +22,26 @@ public static class Arm
     /// <summary>The arm with its elbow tendon lengthened past the fold, released from straight out.</summary>
     public static PlanarModel Collapsing() => LockingArm.Create(elbowRestLengthScale: CollapseScale);
 
+    /// <summary>
+    /// The arm at rest with the upper link at world angle
+    /// <paramref name="upperAngle"/> and the lower at
+    /// <paramref name="lowerAngle"/>, both pins satisfied exactly, and the
+    /// lower link turning about the elbow at <paramref name="lowerRate"/>.
+    /// </summary>
+    public static SystemState At(PlanarModel model, double upperAngle, double lowerAngle, double lowerRate = 0)
+    {
+        var system = model.System;
+        var upper = system.Links[0];
+        var lower = system.Links[1];
+        var state = model.CreateInitialState();
+        var upperPose = new Pose2d((-upper.EndA).Rotated(upperAngle), upperAngle);
+        var elbow = upperPose.ToWorld(upper.EndB);
+        var r = (-lower.EndA).Rotated(lowerAngle);
+        system.SetBody(state.Values, 0, upperPose, default);
+        system.SetBody(state.Values, 1, new Pose2d(elbow + r, lowerAngle), new Twist2d(Vector2d.Cross(lowerRate, r), lowerRate));
+        return state;
+    }
+
     /// <summary>The locked arm with the lower link turning about the (still) elbow at <see cref="KickRate"/>.</summary>
     public static SystemState Kicked(PlanarModel model)
     {
