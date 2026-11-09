@@ -30,6 +30,9 @@ public sealed class TopologyDocument
 
     public List<CableDocument> Cables { get; set; } = [];
 
+    /// <summary>Joint actuators; null (omitted from the file) when there are none.</summary>
+    public List<ActuatorDocument>? Actuators { get; set; }
+
     /// <summary>Default run settings; command-line flags may override them.</summary>
     public SimulationDocument? Simulation { get; set; }
 }
@@ -115,6 +118,35 @@ public sealed class PinDocument
     public AttachmentDocument A { get; set; } = new();
 
     public AttachmentDocument B { get; set; } = new();
+
+    /// <summary>Viscous joint friction c, N·m·s/rad; omitted from the file when zero.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double Friction { get; set; }
+}
+
+/// <summary>
+/// A torque across a pin: +τ on the pin's end A, −τ on end B. The torque is
+/// piecewise-linear in time through <see cref="Schedule"/> and held constant
+/// before the first point and after the last; one point is a constant torque.
+/// </summary>
+public sealed class ActuatorDocument
+{
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>Id of the pin the torque acts across.</summary>
+    public string Pin { get; set; } = string.Empty;
+
+    /// <summary>Breakpoints in strictly increasing time.</summary>
+    public List<TorquePointDocument> Schedule { get; set; } = [];
+}
+
+public sealed class TorquePointDocument
+{
+    /// <summary>Time, s.</summary>
+    public double Time { get; set; }
+
+    /// <summary>Torque, N·m.</summary>
+    public double Torque { get; set; }
 }
 
 public sealed class CableDocument
@@ -147,6 +179,6 @@ public sealed class SimulationDocument
     /// <summary>Steps between recorded frames.</summary>
     public int FrameStride { get; set; } = 1;
 
-    /// <summary>Bracket width for cable switch times, s.</summary>
+    /// <summary>Bracket width for cable and schedule switch times, s.</summary>
     public double EventTolerance { get; set; } = 1e-12;
 }

@@ -49,7 +49,7 @@ public sealed class RunManifest
 
     public int FrameCount { get; set; }
 
-    /// <summary>Bracket width for cable switch times, s.</summary>
+    /// <summary>Bracket width for cable and schedule switch times, s.</summary>
     public double EventTolerance { get; set; }
 
     public double[] Gravity { get; set; } = [0, 0];
@@ -60,8 +60,11 @@ public sealed class RunManifest
     /// <summary>Global settling damping, 1/s; 0 in realistic runs (PLAN.md 4.3).</summary>
     public double GlobalDamping { get; set; }
 
-    /// <summary>Joint actuators and their schedules; none before M5.</summary>
-    public List<string> Actuators { get; set; } = [];
+    /// <summary>
+    /// Joint actuators and their schedules, the same list as
+    /// <c>topology.actuators</c>; empty when the run has none.
+    /// </summary>
+    public List<ActuatorDocument> Actuators { get; set; } = [];
 
     public long Seed { get; set; }
 
@@ -123,6 +126,9 @@ public static class FrameChannels
     public static string PinX(string pin) => $"pin.{pin}.x";
 
     public static string PinY(string pin) => $"pin.{pin}.y";
+
+    /// <summary>Torque an actuator applies at that frame's time, N·m: +τ on its pin's end A.</summary>
+    public static string ActuatorTorque(string actuator) => $"actuator.{actuator}.torque";
 }
 
 public sealed class RunDiagnostics
@@ -139,7 +145,7 @@ public sealed class RunDiagnostics
     /// <summary>Worst pin velocity error over every step, m/s.</summary>
     public double MaxPinVelocityResidual { get; set; }
 
-    /// <summary>Steps split at a cable mode switch.</summary>
+    /// <summary>Steps split at a cable mode switch or an actuator schedule breakpoint.</summary>
     public long EventCount { get; set; }
 
     /// <summary>Steps that hit the per-step switch cap and finished unsplit.</summary>
@@ -168,9 +174,13 @@ public sealed class EnergySeries
 
     public List<double> Elastic { get; set; } = [];
 
+    /// <summary>Energy lost to cable damping and joint friction so far.</summary>
     public List<double> Dissipated { get; set; } = [];
 
-    /// <summary>Kinetic + gravitational + elastic + dissipated: constant up to integration error.</summary>
+    /// <summary>Work done by the joint actuators so far.</summary>
+    public List<double> ActuatorWork { get; set; } = [];
+
+    /// <summary>Kinetic + gravitational + elastic + dissipated − actuator work: constant up to integration error.</summary>
     public List<double> Total { get; set; } = [];
 }
 

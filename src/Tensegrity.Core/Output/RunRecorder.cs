@@ -99,6 +99,7 @@ public static class RunRecorder
                 energy.Gravitational.Add(system.GravitationalPotentialEnergy(s.Values));
                 energy.Elastic.Add(system.CableElasticEnergy(s.Values));
                 energy.Dissipated.Add(system.DissipatedEnergy(s.Values));
+                energy.ActuatorWork.Add(system.ActuatorWork(s.Values));
                 energy.Total.Add(system.TotalEnergy(s.Values));
             });
         }
@@ -122,6 +123,7 @@ public static class RunRecorder
             FrameCount = frameCount,
             EventTolerance = settings.EventTolerance,
             Gravity = [system.Gravity.X, system.Gravity.Y],
+            Actuators = TopologyMapping.ActuatorDocuments(system),
             Seed = metadata.Seed,
             TopologySource = metadata.TopologySource,
             Topology = topology,
@@ -159,6 +161,11 @@ public static class RunRecorder
             channels.Add(FrameChannels.PinFy(pin.Id));
             channels.Add(FrameChannels.PinX(pin.Id));
             channels.Add(FrameChannels.PinY(pin.Id));
+        }
+
+        foreach (var actuator in system.Actuators)
+        {
+            channels.Add(FrameChannels.ActuatorTorque(actuator.Id));
         }
 
         return channels;
@@ -206,6 +213,13 @@ public static class RunRecorder
             Put(reactions[p].Y);
             Put(at.X);
             Put(at.Y);
+        }
+
+        var torques = new double[system.Actuators.Count];
+        system.GetActuatorTorques(state.Time, torques);
+        foreach (var torque in torques)
+        {
+            Put(torque);
         }
     }
 

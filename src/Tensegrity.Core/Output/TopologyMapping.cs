@@ -24,16 +24,18 @@ public static class TopologyMapping
         }
 
         var links = document.Links.Select(l => new PlanarLink(l.Id, l.Mass, l.Inertia, l.Length, ParseRole(l.Role, where))).ToArray();
-        var pins = document.Pins.Select(p => new PinJoint(p.Id, ToAttachment(p.A, where), ToAttachment(p.B, where))).ToArray();
+        var pins = document.Pins.Select(p => new PinJoint(p.Id, ToAttachment(p.A, where), ToAttachment(p.B, where), p.Friction)).ToArray();
         var cables = document.Cables.Select(c =>
             new Cable(c.Id, ToAttachment(c.A, where), ToAttachment(c.B, where), c.RestLength, c.AxialStiffness, c.Damping)).ToArray();
+        var actuators = (document.Actuators ?? []).Select(a => ToActuator(a, where)).ToArray();
 
         var system = new PlanarSystem(
             links,
             ToVector(document.Gravity, $"{where} gravity"),
             pins,
             cables,
-            new ConstraintStabilization(document.ConstraintStabilization));
+            new ConstraintStabilization(document.ConstraintStabilization),
+            actuators);
 
         var state = system.CreateState().Values;
         for (var b = 0; b < links.Length; b++)
@@ -83,7 +85,7 @@ public static class TopologyMapping
             Gravity = [system.Gravity.X, system.Gravity.Y],
             ConstraintStabilization = system.Stabilization.Frequency,
             Links = links,
-            Pins = system.Pins.Select(p => new PinDocument { Id = p.Id, A = ToDocument(p.A), B = ToDocument(p.B) }).ToList(),
+            Pins = system.Pins.Select(p => new PinDocument { Id = p.Id, A = ToDocument(p.A), B = ToDocument(p.B), Friction = p.Friction }).ToList(),
             Cables = system.Cables.Select(c => new CableDocument
             {
                 Id = c.Id,
@@ -93,8 +95,34 @@ public static class TopologyMapping
                 AxialStiffness = c.AxialStiffness,
                 Damping = c.Damping,
             }).ToList(),
+            Actuators = system.Actuators.Count == 0 ? null : ActuatorDocuments(system),
             Simulation = simulation,
         };
+    }
+
+    /// <summary>The system's actuators as documents, in system order.</summary>
+    public static List<ActuatorDocument> ActuatorDocuments(PlanarSystem system)
+    {
+        ArgumentNullException.ThrowIfNull(system);
+        return system.Actuators.Select(a => new ActuatorDocument
+        {
+            Id = a.Id,
+            Pin = a.PinId,
+            Schedule = a.Schedule.Points.Select(p => new TorquePointDocument { Time = p.Time, Torque = p.Torque }).ToList(),
+        }).ToList();
+    }
+
+    private static JointActuator ToActuator(ActuatorDocument document, string where)
+    {
+        if (document.Schedule is null || document.Schedule.Count == 0)
+        {
+            throw new FormatException($"{where}: actuator '{document.Id}' has no schedule.");
+        }
+
+        return new JointActuator(
+            document.Id,
+            document.Pin,
+            new TorqueSchedule(document.Schedule.Select(p => new TorquePoint(p.Time, p.Torque))));
     }
 
     private static AttachmentDocument ToDocument(Attachment attachment) =>

@@ -182,6 +182,98 @@ public sealed class RunRecorderTests : IDisposable
         Assert.Throws<ArgumentOutOfRangeException>(() => RunSettings.ForDuration(0, 1, 1));
     }
 
+    /// <summary>A pinned bar with joint friction, driven by a ramped then held torque.</summary>
+    private static (PlanarSystem System, SystemState State) ActuatedBar()
+    {
+        var bar = PlanarLink.SlenderBar("bar", 2.0, 1.2);
+        var pin = new PinJoint("pivot", Attachment.OnLink("bar", bar.EndA), Attachment.Ground(Vector2d.Zero), friction: 0.15);
+        var schedule = new TorqueSchedule([new TorquePoint(0.0503, 0), new TorquePoint(0.1507, 30)]);
+        var system = new PlanarSystem([bar], PlanarSystem.StandardGravity, [pin], actuators: [new JointActuator("motor", "pivot", schedule)]);
+        var state = system.CreateState();
+        system.SetBody(state.Values, 0, new Pose2d(new Vector2d(0, -0.6), -Math.PI / 2), default);
+        return (system, state);
+    }
+
+    [Fact]
+    public void ActuatorsAreRecordedInTheManifestAndAsTorqueChannels()
+    {
+        var (system, state) = ActuatedBar();
+        var settings = new RunSettings(1e-4, 3_000, 100);
+
+        var manifest = RunRecorder.Record(system, state, settings, Metadata with { TopologyName = "actuated_bar" }, RunDir("run"));
+        var run = RunReader.Open(RunDir("run"));
+
+        var actuator = Assert.Single(run.Manifest.Actuators);
+        Assert.Equal("motor", actuator.Id);
+        Assert.Equal("pivot", actuator.Pin);
+        Assert.Equal([0.0503, 0.1507], actuator.Schedule.Select(p => p.Time));
+        Assert.Equal([0.0, 30.0], actuator.Schedule.Select(p => p.Torque));
+        Assert.Equal(0.15, run.Manifest.Topology.Pins[0].Friction);
+        Assert.Equal("motor", Assert.Single(run.Manifest.Topology.Actuators!).Id);
+
+        // Both schedule breakpoints are split.
+        Assert.Equal(2, manifest.Diagnostics.EventCount);
+
+        var schedule = system.Actuators[0].Schedule;
+        for (var f = 0; f < run.FrameCount; f++)
+        {
+            var time = run.Value(f, FrameChannels.Time);
+            var expected = f * settings.FrameStride * settings.Dt;
+            Assert.Equal((float)expected, time, 1e-6f);
+            Assert.Equal((float)schedule.TorqueAt(expected), run.Value(f, FrameChannels.ActuatorTorque("motor")), 1e-5f);
+        }
+
+        var energy = run.Manifest.Diagnostics.Energy;
+        Assert.Equal(run.FrameCount, energy.ActuatorWork.Count);
+        Assert.True(energy.ActuatorWork[^1] > 1, $"Only {energy.ActuatorWork[^1]} J of actuator work.");
+        Assert.True(energy.Dissipated[^1] > 0, "Joint friction should dissipate energy.");
+        Assert.InRange(manifest.Diagnostics.MaxEnergyBalanceError, 0.0, 1e-9);
+    }
+
+    [Fact]
+    public void RunsWithoutActuatorsHaveAnEmptyListAndNoTorqueChannels()
+    {
+        var manifest = RecordKickedX(RunDir("run"));
+
+        Assert.Empty(manifest.Actuators);
+        Assert.Null(manifest.Topology.Actuators);
+        Assert.DoesNotContain(manifest.FrameLayout.Channels, c => c.StartsWith("actuator.", StringComparison.Ordinal));
+        Assert.All(manifest.Diagnostics.Energy.ActuatorWork, w => Assert.Equal(0.0, w));
+
+        var text = File.ReadAllText(Path.Combine(RunDir("run"), RunFiles.Manifest));
+        Assert.DoesNotContain("\"friction\"", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ActuatorsAndFrictionRoundTripThroughATopologyDocument()
+    {
+        var (system, state) = ActuatedBar();
+
+        var document = TopologyMapping.ToDocument(system, state.Values, "actuated_bar");
+        var (rebuilt, rebuiltState) = TopologyMapping.FromDocument(
+            System.Text.Json.JsonSerializer.Deserialize<TopologyDocument>(RunFiles.SerializeTopology(document), RunFiles.Json)!);
+
+        Assert.Equal(RunFiles.SerializeTopology(document), RunFiles.SerializeTopology(TopologyMapping.ToDocument(rebuilt, rebuiltState, "actuated_bar")));
+        Assert.Equal(0.15, rebuilt.Pins[0].Friction);
+        Assert.Equal(system.Actuators[0].Schedule.Points, rebuilt.Actuators[0].Schedule.Points);
+    }
+
+    [Fact]
+    public void MappingRejectsMalformedActuators()
+    {
+        var (system, state) = ActuatedBar();
+        var empty = TopologyMapping.ToDocument(system, state.Values, "a");
+        empty.Actuators![0].Schedule.Clear();
+        var unknown = TopologyMapping.ToDocument(system, state.Values, "a");
+        unknown.Actuators![0].Pin = "wrist";
+        var unordered = TopologyMapping.ToDocument(system, state.Values, "a");
+        unordered.Actuators![0].Schedule.Reverse();
+
+        Assert.Throws<FormatException>(() => TopologyMapping.FromDocument(empty));
+        Assert.Throws<ArgumentException>(() => TopologyMapping.FromDocument(unknown));
+        Assert.Throws<ArgumentException>(() => TopologyMapping.FromDocument(unordered));
+    }
+
     [Fact]
     public void MappingRejectsMalformedDocuments()
     {
