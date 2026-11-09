@@ -1,8 +1,8 @@
 <Project>
   <!--
     Shared settings for every project under this directory.
-    The Godot project (M4) will need its own Directory.Build.props to opt
-    out of these, since Godot.NET.Sdk manages its own build settings.
+    The Godot project opts out with godot/Directory.Build.props, since
+    Godot.NET.Sdk manages its own build settings.
   -->
   <PropertyGroup>
     <LangVersion>latest</LangVersion>

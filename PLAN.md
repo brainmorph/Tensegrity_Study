@@ -225,10 +225,13 @@ Completed milestones are struck through, with the commit that finished them. Any
 - ~~**Carried from M2:** for test 14, at `dt` = 1e-4 the planar X's energy-balance error falls only 12.6–12.8× per halving (its stiff cable modes put it at the start of RK4's asymptotic range; 5e-5 gives 14.4×). Decide its recorded `dt` from that study.~~ Its trajectory is asymptotic at 1e-4 s (16× per halving); 1e-4 s kept.
 - Left open, carried forward: actuators in the manifest and frames (M5).
 
-### M4 — Godot visualizer (2D first light)
-- Godot 4.7 mono project under `godot/`. Loads a run directory via `Tensegrity.RunFormat`. Renders links as bars at their recorded position and angle, cables as lines whose color follows recorded tension, pins as dots. Timeline slider.
-- Rendering uses only recorded frames: no interpolation between frames unless explicitly labeled visual-only. Default is frame-exact display.
-- No physics nodes or physics-driven transforms in the Godot scene. Transforms are set directly from recorded data.
+### ~~M4 — Godot visualizer (2D first light)~~ — done in `9e55287`, `806fd0e`, `cfbfa28`, `82bab9c`
+- ~~Godot 4.7 mono project under `godot/`. Loads a run directory via `Tensegrity.RunFormat`. Renders links as bars at their recorded position and angle, cables as lines whose color follows recorded tension, pins as dots. Timeline slider.~~ Runs open from `-- --run <dir>` (plus `--play`) or an in-app folder picker. Cable color uses one scale per run, from 0 N to the highest tension in the manifest diagnostics, and slack cables are dashed. Usage is in `godot/README.md`.
+- ~~Rendering uses only recorded frames: no interpolation between frames unless explicitly labeled visual-only. Default is frame-exact display.~~ There is no interpolation at all: playback shows the last frame recorded at or before the playback clock.
+- ~~No physics nodes or physics-driven transforms in the Godot scene. Transforms are set directly from recorded data.~~ Both Godot physics engines are also set to the `Dummy` server.
+- Tests 15 and 16 green. Test 15 scans `godot/` on every `dotnet test`. Test 16 runs Godot headless (`--fidelity-dump`) on `planar_x` and `cable_oscillator` and checks every frame for exact float32 equality. It is skipped when the Godot executable is missing (`TENSEGRITY_GODOT`, else the path in Section 3).
+- Visual validation: `planar_x` holds its shape at rest over the full run, checked on rendered frames 0 and 200.
+- Left open, carried forward: recorded pin reaction forces are not drawn yet (M6, with the plots). Interactive use (mouse pan and zoom, folder picker) has only been checked by building and launching; a hands-on pass is still due.
 
 ### M5 — Locking wing (2D)
 - **Carried from M3:** record actuators and their schedules in the manifest's `actuators` list (empty today), and their torques as frame channels.
@@ -241,6 +244,7 @@ Completed milestones are struck through, with the commit that finished them. Any
 - **Carried from M2:** optional global damping for settling experiments (Section 4.3), off by default and recorded in the manifest when used. M2 did not need it: its equilibria are exact by construction.
 - Parameter sweeps: vary cable rest lengths and attachment points, record which configurations lock and how much effort each needs.
 - Side-by-side run comparison in Godot.
+- **Carried from M4:** draw the recorded pin reaction forces (`pin.<id>.fx`, `.fy`) as arrows, scaled per run like cable tension.
 - Plots of energy, per-cable tension, and actuator effort over time (Godot or exported CSV).
 
 ### M7 — Refinement and Stage B (optional)
