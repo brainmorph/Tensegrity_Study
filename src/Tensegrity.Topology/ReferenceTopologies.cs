@@ -39,7 +39,7 @@ public static class ReferenceTopologies
     public const double ArmCollapseScale = 1.10;
 
     public static IReadOnlyList<string> Names { get; } =
-        ["pendulum", "cable_oscillator", "planar_x", "planar_x_rest", "planar_x_free", "locking_arm", "locking_arm_collapse"];
+        ["pendulum", "cable_oscillator", "planar_x", "planar_x_rest", "planar_x_free", "locking_arm", "locking_arm_collapse", "ground_drop"];
 
     public static PlanarModel Create(string name) => name switch
     {
@@ -50,6 +50,7 @@ public static class ReferenceTopologies
         "planar_x_free" => PlanarXFree(),
         "locking_arm" => LockingArmKicked(),
         "locking_arm_collapse" => LockingArmCollapse(),
+        "ground_drop" => GroundDrop(),
         _ => throw new ArgumentException($"Unknown reference topology '{name}'. Known: {string.Join(", ", Names)}.", nameof(name)),
     };
 
@@ -153,6 +154,13 @@ public static class ReferenceTopologies
             description: ArmSummary + ", except the elbow tendon is 10% longer than the lock needs, past its threshold of about 8.2%. Released at rest from straight out, the lower link collapses, strikes the elbow's fold stop at 150 degrees (k 20 N m/rad, c 0.2 N m s/rad) and rebounds.",
             simulation: DefaultSimulation());
     }
+
+    /// <summary>A bar dropped tilted on to the ground line: it lands, bounces, slides and comes to rest.</summary>
+    public static PlanarModel GroundDrop() =>
+        DroppedBar.Create().With(
+            name: "ground_drop",
+            description: "Slender bar, 1 m / 1 kg, with a contact point at each end, dropped on to the ground line y = 0 under standard gravity: center 0.4 m up, tilted 30 degrees, moving at 1.5 m/s in +x and turning at -2 rad/s. Ground: normal k 1e4 N/m, c 60 N s/m; Coulomb friction mu 0.5 through a tangential spring 1e4 N/m and damper 60 N s/m in series with a slider. It lands on one end, bounces, slides and comes to rest lying flat.",
+            simulation: DefaultSimulation());
 
     /// <summary>The free-floating X with no gravity, after opposite twists on its struts (zero total momentum).</summary>
     public static PlanarModel PlanarXFree()

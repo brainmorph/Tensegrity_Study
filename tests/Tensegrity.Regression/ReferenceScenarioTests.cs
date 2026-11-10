@@ -28,6 +28,9 @@ public class ReferenceScenarioTests
         // M5
         new LockingArmScenario(),
         new LockingArmCollapseScenario(),
+
+        // M6
+        new GroundDropScenario(),
     ];
 
     public static TheoryData<string> All() => new(Scenarios.Select(s => s.Name));

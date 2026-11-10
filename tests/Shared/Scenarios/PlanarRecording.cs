@@ -5,7 +5,10 @@ using Tensegrity.Topology;
 
 namespace Tensegrity.Testing.Scenarios;
 
-/// <summary>Records poses, tensions, pin reactions and energy for a planar structure run: 1 s at dt 1e-4 s, sampled every 0.05 s.</summary>
+/// <summary>
+/// Records poses, tensions, pin reactions, ground contact forces and energy
+/// for a planar structure run: 1 s at dt 1e-4 s, sampled every 0.05 s.
+/// </summary>
 internal static class PlanarRecording
 {
     public const double Dt = 1e-4;
@@ -29,6 +32,8 @@ internal static class PlanarRecording
         var initialEnergy = system.TotalEnergy(state.Values);
         var maxBalanceError = 0.0;
         var maxPinResidual = 0.0;
+        var contactForces = new Vector2d[system.ContactCount];
+        var maxPenetration = double.NegativeInfinity;
         var watched = (limitPins ?? []).Select(id => system.Pins.Select(p => p.Id).ToList().IndexOf(id)).ToArray();
         if (watched.Contains(-1))
         {
@@ -44,6 +49,11 @@ internal static class PlanarRecording
         {
             maxBalanceError = Math.Max(maxBalanceError, Math.Abs(system.TotalEnergy(s.Values) - initialEnergy));
             maxPinResidual = Math.Max(maxPinResidual, system.PinPositionResidual(s.Values));
+            for (var i = 0; i < system.ContactCount; i++)
+            {
+                maxPenetration = Math.Max(maxPenetration, system.GroundLine!.Penetration(system.GetContactPoint(s.Values, i).Y));
+            }
+
             if (watched.Length > 0)
             {
                 system.GetLimitTorques(s.Values, limitTorques);
@@ -87,6 +97,17 @@ internal static class PlanarRecording
                 }
             }
 
+            if (contactForces.Length > 0)
+            {
+                system.GetContactForces(s.Values, contactForces);
+                for (var i = 0; i < contactForces.Length; i++)
+                {
+                    var id = system.GroundLine!.Points[i].Id;
+                    recorder.Add($"contact_{id}_normal", contactForces[i].Y);
+                    recorder.Add($"contact_{id}_friction", contactForces[i].X);
+                }
+            }
+
             recorder.Add("kinetic_energy", system.KineticEnergy(s.Values));
             recorder.Add("potential_energy", system.GravitationalPotentialEnergy(s.Values));
             recorder.Add("elastic_energy", system.ElasticEnergy(s.Values));
@@ -97,6 +118,11 @@ internal static class PlanarRecording
         if (reactions.Length > 0)
         {
             recorder.Add("max_pin_residual", maxPinResidual);
+        }
+
+        if (contactForces.Length > 0)
+        {
+            recorder.Add("max_ground_penetration", maxPenetration);
         }
 
         for (var w = 0; w < watched.Length; w++)

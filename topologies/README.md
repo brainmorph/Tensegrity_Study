@@ -27,6 +27,7 @@ Tests hold each file equal to the catalog, and each catalog entry bit-identical 
 | `planar_x_free.json` | The X floating with no gravity, its shape disturbed with zero total momentum. Rings down to its shape. |
 | `locking_arm.json` | Two-link arm held straight out by one tendon per joint, with no muscle torque. The lower link is kicked downward, the lock holds, and the arm rings back to straight out. |
 | `locking_arm_collapse.json` | The same arm with its elbow tendon 10% too long, past the lock threshold. Released from straight out, the lower link collapses, strikes the elbow's fold stop at 150° and rebounds. |
+| `ground_drop.json` | A 1 m bar dropped tilted on to the ground line (penalty contact, Coulomb friction μ = 0.5). It lands on one end, slips, bounces clear twice, and comes to rest lying flat by 0.5 s. |
 
 Hand-authored topologies can live here too. Files may contain `//` comments.
 
@@ -49,12 +50,15 @@ Results at commit `78ce212`. The change on halving dt = 1e-4 s estimates the err
 | planar_x_free | 1.4e-12 | 15.0, 14.4, 15.3 | 3.2e-10 J | 0 |
 | locking_arm | 2.0e-14 | 16.5, 17.3, then at the rounding floor | 7.4e-13 J | 0 |
 | locking_arm_collapse | 8.6e-12 | 16.0, 18.4, 9.7 | 9.8e-13 J | 13 at every level |
+| ground_drop | 2.3e-10 | 15.5, 16.3, 15.8 | 2.7e-8 J | 22 at every level |
 
 The locking arm rows were added at M5 (after commit `67acd3b`). The collapse row was rerun at M6, when the arm gained its elbow fold stop (Section 4.1 of PLAN.md): the falling forearm now strikes the stop at 150° instead of folding on to about 170°. Its 13 tendon and stop switches are located to 1e-12 s at every level. The ratio is 16–18 down to 1e-4 s and drops to 9.7 on the last halving, where the change (8.9e-13) nears the rounding floor of a run through large angles and many events. The change at 1e-4 s is 8.6e-12, far below float32 precision.
 
+The ground_drop row was added at M6. Its 22 contact and stick/slip switches are found at every level, and the trajectory falls by 16 per halving throughout. Its change at 1e-4 s, 2.3e-10, is the largest of the set: the 1e4 N/m contact springs (about 140 rad/s) are the stiffest elements so far. It is still about 300 times below float32 precision. The energy balance error, 2.7e-8 J against 5.2 J dissipated, also falls by 16 per halving, so it is integration error at the impacts and not a leak in the contact model.
+
 Why 1e-4 s:
 
-- **Converged.** Halving the step changes no position or angle by more than 9e-12 m or rad. That is at least 10⁴ times below the float32 precision the frames are stored in (about 6e-8 at 1 m).
+- **Converged.** Halving the step changes no position or angle by more than 9e-12 m or rad, except 2.3e-10 for ground_drop. That is at least 10⁴ times (ground_drop: 300 times) below the float32 precision the frames are stored in (about 6e-8 at 1 m).
 - **In RK4's asymptotic range.** The change falls by about 16 per halving from 4e-4 s down, until it reaches the rounding floor. Event-splitting keeps the cable oscillator at this order, and it finds the same 9 switches at every step size.
 - **Energy of the X.** The X's energy balance error falls more slowly at the larger steps: 7.5–8× from 4e-4 s, then 12.6–12.8×, then 14.4–15×. Its stiff cable modes (ω·dt ≈ 0.03) are still entering the asymptotic range there. The trajectory is already asymptotic, and the balance error is at most 3.2e-10 J, so the X needs no smaller step.
 - **Consistent.** All golden baselines and test tolerances were set at 1e-4 s.

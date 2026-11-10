@@ -1,0 +1,63 @@
+{
+  "format_version": 1,
+  "name": "ground_drop",
+  "description": "Slender bar, 1 m / 1 kg, with a contact point at each end, dropped on to the ground line y = 0 under standard gravity: center 0.4 m up, tilted 30 degrees, moving at 1.5 m/s in \u002Bx and turning at -2 rad/s. Ground: normal k 1e4 N/m, c 60 N s/m; Coulomb friction mu 0.5 through a tangential spring 1e4 N/m and damper 60 N s/m in series with a slider. It lands on one end, bounces, slides and comes to rest lying flat.",
+  "gravity": [
+    0,
+    -9.81
+  ],
+  "constraint_stabilization": 50,
+  "links": [
+    {
+      "id": "bar",
+      "role": "link",
+      "mass": 1,
+      "inertia": 0.08333333333333333,
+      "length": 1,
+      "pose": {
+        "x": 0,
+        "y": 0.4,
+        "theta": 0.5235987755982988
+      },
+      "twist": {
+        "vx": 1.5,
+        "vy": 0,
+        "omega": -2
+      }
+    }
+  ],
+  "pins": [],
+  "cables": [],
+  "ground": {
+    "height": 0,
+    "normal_stiffness": 10000,
+    "normal_damping": 60,
+    "friction": 0.5,
+    "tangential_stiffness": 10000,
+    "tangential_damping": 60,
+    "contacts": [
+      {
+        "id": "left",
+        "link": "bar",
+        "point": [
+          -0.5,
+          0
+        ]
+      },
+      {
+        "id": "right",
+        "link": "bar",
+        "point": [
+          0.5,
+          0
+        ]
+      }
+    ]
+  },
+  "simulation": {
+    "dt": 0.0001,
+    "duration": 2,
+    "frame_stride": 100,
+    "event_tolerance": 1E-12
+  }
+}
