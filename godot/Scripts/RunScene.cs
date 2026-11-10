@@ -8,7 +8,8 @@ namespace Tensegrity.Viewer;
 /// y-up, the screen y-down) and nothing else, so each child holds exactly
 /// the recorded values of the frame on show: links at their recorded
 /// center and angle, cables between their recorded endpoints, pins at
-/// their recorded positions. Nothing is interpolated or derived.
+/// their recorded positions, and the ground line (if any) at its height
+/// from the topology. Nothing is interpolated or derived.
 /// </summary>
 public partial class RunScene : Node2D
 {
@@ -19,6 +20,9 @@ public partial class RunScene : Node2D
     private readonly List<CableSlot> cables = [];
     private readonly List<PinSlot> pins = [];
     private RunReader? run;
+
+    /// <summary>The ground line, or null when the run has none.</summary>
+    public GroundView? Ground { get; private set; }
 
     public int Frame { get; private set; } = -1;
 
@@ -45,7 +49,13 @@ public partial class RunScene : Node2D
         var topology = reader.Manifest.Topology;
         TensionScale = reader.Manifest.Diagnostics.CableTensions.Select(c => c.MaxTension).DefaultIfEmpty(0).Max();
 
-        // Draw order: cables under links under pins.
+        // Draw order: ground under cables under links under pins.
+        if (topology.Ground is { } ground)
+        {
+            Ground = new GroundView { Name = "ground", Height = (float)ground.Height };
+            AddChild(Ground);
+        }
+
         foreach (var cable in topology.Cables)
         {
             var view = new CableView { Name = "cable_" + cable.Id, Id = cable.Id, TensionScale = TensionScale };
@@ -95,6 +105,15 @@ public partial class RunScene : Node2D
         foreach (var slot in pins)
         {
             slot.View.Radius = stroke * 0.9f;
+        }
+
+        if (Ground is not null)
+        {
+            // Wide enough to run off the screen whatever the zoom.
+            var span = Mathf.Max(Bounds.Size.X, Bounds.Size.Y) * 5;
+            Ground.Left = Bounds.GetCenter().X - span;
+            Ground.Right = Bounds.GetCenter().X + span;
+            Ground.Stroke = stroke;
         }
 
         ShowFrame(0);
@@ -152,6 +171,12 @@ public partial class RunScene : Node2D
             {
                 Grow(new Vector2(values[slot.X], values[slot.Y]), 0);
             }
+        }
+
+        if (topology.Ground is { } ground && float.IsFinite(min.X))
+        {
+            // Keep the line in view: the camera frames the structure and the ground under it.
+            Grow(new Vector2(min.X, (float)ground.Height), 0);
         }
 
         if (!float.IsFinite(min.X) || !float.IsFinite(max.X))
