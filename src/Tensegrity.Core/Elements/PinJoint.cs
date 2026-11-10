@@ -14,10 +14,13 @@ namespace Tensegrity.Core.Elements;
 /// that resists the relative rotation and dissipates c·Δω². It is off (zero)
 /// by default. Viscous rather than Coulomb friction keeps the right-hand
 /// side smooth, so it needs no events.
+///
+/// A pin may also have a <see cref="JointLimit"/>: stops on its joint angle
+/// θ_A − θ_B. None by default, so the joint turns freely.
 /// </summary>
 public sealed class PinJoint
 {
-    public PinJoint(string id, Attachment a, Attachment b, double friction = 0)
+    public PinJoint(string id, Attachment a, Attachment b, double friction = 0, JointLimit? limit = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
         if (a.IsGround && b.IsGround)
@@ -39,6 +42,7 @@ public sealed class PinJoint
         A = a;
         B = b;
         Friction = friction;
+        Limit = limit;
     }
 
     public string Id { get; }
@@ -49,4 +53,7 @@ public sealed class PinJoint
 
     /// <summary>Viscous joint friction coefficient c, N·m·s/rad; zero for a frictionless pin.</summary>
     public double Friction { get; }
+
+    /// <summary>Stops on the joint angle θ_A − θ_B, or null for an unlimited joint.</summary>
+    public JointLimit? Limit { get; }
 }

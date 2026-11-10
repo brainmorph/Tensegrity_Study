@@ -24,7 +24,8 @@ public static class TopologyMapping
         }
 
         var links = document.Links.Select(l => new PlanarLink(l.Id, l.Mass, l.Inertia, l.Length, ParseRole(l.Role, where))).ToArray();
-        var pins = document.Pins.Select(p => new PinJoint(p.Id, ToAttachment(p.A, where), ToAttachment(p.B, where), p.Friction)).ToArray();
+        var pins = document.Pins.Select(p =>
+            new PinJoint(p.Id, ToAttachment(p.A, where), ToAttachment(p.B, where), p.Friction, ToLimit(p.Limit))).ToArray();
         var cables = document.Cables.Select(c =>
             new Cable(c.Id, ToAttachment(c.A, where), ToAttachment(c.B, where), c.RestLength, c.AxialStiffness, c.Damping)).ToArray();
         var actuators = (document.Actuators ?? []).Select(a => ToActuator(a, where)).ToArray();
@@ -85,7 +86,14 @@ public static class TopologyMapping
             Gravity = [system.Gravity.X, system.Gravity.Y],
             ConstraintStabilization = system.Stabilization.Frequency,
             Links = links,
-            Pins = system.Pins.Select(p => new PinDocument { Id = p.Id, A = ToDocument(p.A), B = ToDocument(p.B), Friction = p.Friction }).ToList(),
+            Pins = system.Pins.Select(p => new PinDocument
+            {
+                Id = p.Id,
+                A = ToDocument(p.A),
+                B = ToDocument(p.B),
+                Friction = p.Friction,
+                Limit = ToDocument(p.Limit),
+            }).ToList(),
             Cables = system.Cables.Select(c => new CableDocument
             {
                 Id = c.Id,
@@ -124,6 +132,22 @@ public static class TopologyMapping
             document.Pin,
             new TorqueSchedule(document.Schedule.Select(p => new TorquePoint(p.Time, p.Torque))));
     }
+
+    private static JointLimit? ToLimit(JointLimitDocument? document) =>
+        document is null
+            ? null
+            : new JointLimit(document.Lower ?? double.NegativeInfinity, document.Upper ?? double.PositiveInfinity, document.Stiffness, document.Damping);
+
+    private static JointLimitDocument? ToDocument(JointLimit? limit) =>
+        limit is null
+            ? null
+            : new JointLimitDocument
+            {
+                Lower = limit.HasLower ? limit.Lower : null,
+                Upper = limit.HasUpper ? limit.Upper : null,
+                Stiffness = limit.Stiffness,
+                Damping = limit.Damping,
+            };
 
     private static AttachmentDocument ToDocument(Attachment attachment) =>
         attachment.IsGround

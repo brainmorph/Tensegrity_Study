@@ -127,6 +127,9 @@ public static class FrameChannels
 
     public static string PinY(string pin) => $"pin.{pin}.y";
 
+    /// <summary>Torque a pin's joint limit applies to its end A, N·m (end B takes the opposite). Only pins with a limit have it.</summary>
+    public static string PinLimitTorque(string pin) => $"pin.{pin}.limit_torque";
+
     /// <summary>Torque an actuator applies at that frame's time, N·m: +τ on its pin's end A.</summary>
     public static string ActuatorTorque(string actuator) => $"actuator.{actuator}.torque";
 }
@@ -145,7 +148,7 @@ public sealed class RunDiagnostics
     /// <summary>Worst pin velocity error over every step, m/s.</summary>
     public double MaxPinVelocityResidual { get; set; }
 
-    /// <summary>Steps split at a cable mode switch or an actuator schedule breakpoint.</summary>
+    /// <summary>Steps split at a cable or joint-limit mode switch, or an actuator schedule breakpoint.</summary>
     public long EventCount { get; set; }
 
     /// <summary>Steps that hit the per-step switch cap and finished unsplit.</summary>
@@ -172,9 +175,10 @@ public sealed class EnergySeries
 
     public List<double> Gravitational { get; set; } = [];
 
+    /// <summary>Energy stored in stretched cables and compressed joint-limit stops.</summary>
     public List<double> Elastic { get; set; } = [];
 
-    /// <summary>Energy lost to cable damping and joint friction so far.</summary>
+    /// <summary>Energy lost to cable damping, joint-limit damping and joint friction so far.</summary>
     public List<double> Dissipated { get; set; } = [];
 
     /// <summary>Work done by the joint actuators so far.</summary>

@@ -259,6 +259,54 @@ public sealed class RunRecorderTests : IDisposable
     }
 
     [Fact]
+    public void JointLimitsRoundTripAndAreRecordedAsTorqueChannels()
+    {
+        var bar = PlanarLink.SlenderBar("bar", mass: 2.0, length: 1.2);
+        var system = new PlanarSystem(
+            [bar],
+            PlanarSystem.StandardGravity,
+            [
+                new PinJoint("pivot", Attachment.OnLink("bar", bar.EndA), Attachment.Ground(Vector2d.Zero), limit: new JointLimit(-0.3, double.PositiveInfinity, 400.0, 20.0)),
+            ]);
+        var state = system.CreateState();
+        system.SetBody(state.Values, 0, new Pose2d(new Vector2d(0.6, 0), 0), default);
+
+        var document = TopologyMapping.ToDocument(system, state.Values, "stopped_bar");
+        var limitDocument = document.Pins[0].Limit!;
+        Assert.Equal(-0.3, limitDocument.Lower);
+        Assert.Null(limitDocument.Upper);
+        var (rebuilt, rebuiltState) = TopologyMapping.FromDocument(
+            System.Text.Json.JsonSerializer.Deserialize<TopologyDocument>(RunFiles.SerializeTopology(document), RunFiles.Json)!);
+        Assert.Equal(RunFiles.SerializeTopology(document), RunFiles.SerializeTopology(TopologyMapping.ToDocument(rebuilt, rebuiltState, "stopped_bar")));
+        Assert.False(rebuilt.Pins[0].Limit!.HasUpper);
+
+        var settings = new RunSettings(1e-4, 30_000, 300);
+        var manifest = RunRecorder.Record(system, state, settings, Metadata with { TopologyName = "stopped_bar" }, RunDir("run"));
+        var run = RunReader.Open(RunDir("run"));
+
+        Assert.Contains(FrameChannels.PinLimitTorque("pivot"), manifest.FrameLayout.Channels);
+        Assert.True(manifest.Diagnostics.EventCount >= 1, "The stop should be struck.");
+        Assert.InRange(manifest.Diagnostics.MaxEnergyBalanceError, 0.0, 1e-9);
+
+        // The bar falls from horizontal onto the stop at −0.3 rad and comes to rest on it.
+        var last = run.FrameCount - 1;
+        Assert.InRange(run.Value(last, FrameChannels.LinkTheta("bar")), -0.34f, -0.31f);
+        var torque = run.Value(last, FrameChannels.PinLimitTorque("pivot"));
+        Assert.InRange(torque, 10f, 12.5f);
+        Assert.True(manifest.Diagnostics.Energy.Elastic[^1] > 0, "The compressed stop stores energy.");
+    }
+
+    [Fact]
+    public void RunsWithoutLimitsHaveNoLimitChannels()
+    {
+        var manifest = RecordKickedX(RunDir("run"));
+
+        Assert.DoesNotContain(manifest.FrameLayout.Channels, c => c.EndsWith(".limit_torque", StringComparison.Ordinal));
+        var text = File.ReadAllText(Path.Combine(RunDir("run"), RunFiles.Manifest));
+        Assert.DoesNotContain("\"limit\"", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MappingRejectsMalformedActuators()
     {
         var (system, state) = ActuatedBar();

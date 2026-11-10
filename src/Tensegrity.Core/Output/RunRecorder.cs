@@ -97,7 +97,7 @@ public static class RunRecorder
                 energy.Time.Add(s.Time);
                 energy.Kinetic.Add(system.KineticEnergy(s.Values));
                 energy.Gravitational.Add(system.GravitationalPotentialEnergy(s.Values));
-                energy.Elastic.Add(system.CableElasticEnergy(s.Values));
+                energy.Elastic.Add(system.ElasticEnergy(s.Values));
                 energy.Dissipated.Add(system.DissipatedEnergy(s.Values));
                 energy.ActuatorWork.Add(system.ActuatorWork(s.Values));
                 energy.Total.Add(system.TotalEnergy(s.Values));
@@ -168,6 +168,11 @@ public static class RunRecorder
             channels.Add(FrameChannels.ActuatorTorque(actuator.Id));
         }
 
+        foreach (var pin in system.Pins.Where(p => p.Limit is not null))
+        {
+            channels.Add(FrameChannels.PinLimitTorque(pin.Id));
+        }
+
         return channels;
     }
 
@@ -220,6 +225,16 @@ public static class RunRecorder
         foreach (var torque in torques)
         {
             Put(torque);
+        }
+
+        var limitTorques = new double[system.Pins.Count];
+        system.GetLimitTorques(y, limitTorques);
+        for (var p = 0; p < limitTorques.Length; p++)
+        {
+            if (system.Pins[p].Limit is not null)
+            {
+                Put(limitTorques[p]);
+            }
         }
     }
 

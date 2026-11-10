@@ -122,6 +122,30 @@ public sealed class PinDocument
     /// <summary>Viscous joint friction c, N·m·s/rad; omitted from the file when zero.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public double Friction { get; set; }
+
+    /// <summary>Stops on the joint angle θ_A − θ_B; null (omitted from the file) for an unlimited joint.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JointLimitDocument? Limit { get; set; }
+}
+
+/// <summary>
+/// The range of a pin's joint angle φ = θ_A − θ_B (a ground end counts as
+/// θ = 0). Past a stop, a torsional spring-damper pushes φ back into range
+/// and never pulls it out. Either stop may be omitted, but not both.
+/// </summary>
+public sealed class JointLimitDocument
+{
+    /// <summary>Lower stop, rad; null for none.</summary>
+    public double? Lower { get; set; }
+
+    /// <summary>Upper stop, rad; null for none.</summary>
+    public double? Upper { get; set; }
+
+    /// <summary>Torsional stiffness k, N·m/rad.</summary>
+    public double Stiffness { get; set; }
+
+    /// <summary>Torsional damping c, N·m·s/rad.</summary>
+    public double Damping { get; set; }
 }
 
 /// <summary>

@@ -33,12 +33,14 @@ namespace Tensegrity.Core.Systems;
 /// frequency; then q̈ = M⁻¹·(F + Jᵀ·λ).
 ///
 /// Cables switch between slack, taut and recoiling (see <see cref="Cable"/>),
-/// and actuator schedules between their linear segments (see
-/// <see cref="TorqueSchedule"/>). As an <see cref="ISwitchedSystem"/>,
-/// <see cref="Evaluate"/> uses each cable's and schedule's latched mode, so a
-/// system with cables or non-constant schedules must be stepped by an
-/// <see cref="EventSplittingStepper"/> (or have its modes latched by hand).
-/// Diagnostics such as <see cref="GetCableTensions"/>,
+/// joint-limit stops between clear, pressing and recoiling (see
+/// <see cref="JointLimit"/>), and actuator schedules between their linear
+/// segments (see <see cref="TorqueSchedule"/>). As an
+/// <see cref="ISwitchedSystem"/>, <see cref="Evaluate"/> uses each element's
+/// latched mode, so a system with cables, joint limits or non-constant
+/// schedules must be stepped by an <see cref="EventSplittingStepper"/> (or
+/// have its modes latched by hand). Diagnostics such as
+/// <see cref="GetCableTensions"/>, <see cref="GetLimitTorques"/>,
 /// <see cref="GetActuatorTorques"/> and <see cref="GetPinReactions"/> always
 /// use the physical laws at the given time and state, independent of the
 /// latch.
@@ -59,6 +61,8 @@ public sealed class PlanarSystem : ISwitchedSystem
     private readonly PinJoint[] pins;
     private readonly ResolvedPoint[] pinA;
     private readonly ResolvedPoint[] pinB;
+    private readonly ContactMode[] latchedLowerStops;
+    private readonly ContactMode[] latchedUpperStops;
     private readonly Cable[] cables;
     private readonly ResolvedPoint[] cableA;
     private readonly ResolvedPoint[] cableB;
@@ -103,6 +107,8 @@ public sealed class PlanarSystem : ISwitchedSystem
         RequireUniqueIds(this.pins.Select(p => p.Id), "pin", nameof(pins));
         pinA = this.pins.Select(p => Resolve(p.A, $"pin '{p.Id}'")).ToArray();
         pinB = this.pins.Select(p => Resolve(p.B, $"pin '{p.Id}'")).ToArray();
+        latchedLowerStops = new ContactMode[this.pins.Length];
+        latchedUpperStops = new ContactMode[this.pins.Length];
 
         this.cables = cables?.ToArray() ?? [];
         RequireUniqueIds(this.cables.Select(c => c.Id), "cable", nameof(cables));
@@ -122,7 +128,9 @@ public sealed class PlanarSystem : ISwitchedSystem
         latchedSegments = new int[this.actuators.Length];
 
         // With nothing that switches, the default latch is already correct.
-        modesLatched = this.cables.Length == 0 && this.actuators.All(a => a.Schedule.IsConstant);
+        modesLatched = this.cables.Length == 0
+            && this.pins.All(p => p.Limit is null)
+            && this.actuators.All(a => a.Schedule.IsConstant);
 
         forces = new double[CoordinateCount];
         jacobian = new double[ConstraintCount * CoordinateCount];
@@ -210,7 +218,7 @@ public sealed class PlanarSystem : ISwitchedSystem
         if (!modesLatched)
         {
             throw new InvalidOperationException(
-                "Modes are not latched. Step a system with cables or scheduled actuators through an EventSplittingStepper, or call LatchModes first.");
+                "Modes are not latched. Step a system with cables, joint limits or scheduled actuators through an EventSplittingStepper, or call LatchModes first.");
         }
 
         ComputeTotalForces(time, state, useLatchedModes: true);
@@ -260,9 +268,9 @@ public sealed class PlanarSystem : ISwitchedSystem
     /// uniform bar, so the +x half has mass m/2 centered at local (ℓ/4, 0).
     /// Cable and pin forces count toward the +x half when their attachment
     /// has local x &gt; 0; a point exactly on the midpoint acts on neither.
-    /// Uses the physical cable law and actuator torques at the given time
-    /// and state. Actuator torques are pure couples, so they enter only
-    /// through the link's acceleration.
+    /// Uses the physical cable law, joint-limit torques and actuator torques
+    /// at the given time and state. Limit and actuator torques are pure
+    /// couples, so they enter only through the link's acceleration.
     /// </summary>
     public void GetMidpointCompressions(double time, ReadOnlySpan<double> state, Span<double> compressions)
     {
@@ -320,8 +328,8 @@ public sealed class PlanarSystem : ISwitchedSystem
     /// <summary>
     /// The joint torques at <paramref name="pinIds"/> that hold this state
     /// still: test 11's effort measure (PLAN.md 7). Applied loads are taken
-    /// at <paramref name="time"/> with the physical cable law, and include
-    /// any actuators the system already has.
+    /// at <paramref name="time"/> with the physical cable and joint-limit
+    /// laws, and include any actuators the system already has.
     ///
     /// The constrained acceleration is affine in the added torques,
     /// q̈ = q̈₀ + G·τ, where column j of G is the response to a unit couple
@@ -470,6 +478,11 @@ public sealed class PlanarSystem : ISwitchedSystem
             latchedModes[c] = CableModeAt(state, c);
         }
 
+        for (var p = 0; p < pins.Length; p++)
+        {
+            (latchedLowerStops[p], latchedUpperStops[p]) = LimitModesAt(state, p);
+        }
+
         for (var a = 0; a < actuators.Length; a++)
         {
             latchedSegments[a] = actuators[a].Schedule.SegmentAt(time);
@@ -490,6 +503,14 @@ public sealed class PlanarSystem : ISwitchedSystem
         for (var c = 0; c < cables.Length; c++)
         {
             if (CableModeAt(state, c) != latchedModes[c])
+            {
+                return false;
+            }
+        }
+
+        for (var p = 0; p < pins.Length; p++)
+        {
+            if (LimitModesAt(state, p) != (latchedLowerStops[p], latchedUpperStops[p]))
             {
                 return false;
             }
@@ -556,6 +577,43 @@ public sealed class PlanarSystem : ISwitchedSystem
         }
     }
 
+    /// <summary>
+    /// Joint angle φ = θ_A − θ_B of pin <paramref name="pin"/> and its rate
+    /// φ̇, rad and rad/s. A ground end counts as θ = 0.
+    /// </summary>
+    public (double Angle, double Rate) GetJointAngle(ReadOnlySpan<double> state, int pin)
+    {
+        CheckLength(state.Length);
+        CheckPin(pin);
+        return (JointAngle(state, pin), RelativeRate(state, pin));
+    }
+
+    /// <summary>Physical modes of pin <paramref name="pin"/>'s lower and upper stops; both clear without a limit.</summary>
+    public (ContactMode Lower, ContactMode Upper) GetLimitModes(ReadOnlySpan<double> state, int pin)
+    {
+        CheckLength(state.Length);
+        CheckPin(pin);
+        return LimitModesAt(state, pin);
+    }
+
+    /// <summary>
+    /// Physical joint-limit torque on each pin's end A at this state, N·m
+    /// (end B takes the opposite); zero for a pin without a limit.
+    /// </summary>
+    public void GetLimitTorques(ReadOnlySpan<double> state, Span<double> torques)
+    {
+        CheckLength(state.Length);
+        if (torques.Length != pins.Length)
+        {
+            throw new ArgumentException($"Expected {pins.Length} torques, got {torques.Length}.", nameof(torques));
+        }
+
+        for (var p = 0; p < pins.Length; p++)
+        {
+            torques[p] = pins[p].Limit?.Torque(JointAngle(state, p), RelativeRate(state, p)) ?? 0.0;
+        }
+    }
+
     /// <summary>World position of an attachment at this state.</summary>
     public Vector2d WorldPoint(ReadOnlySpan<double> state, Attachment attachment) =>
         WorldPoint(state, Resolve(attachment, "attachment"));
@@ -604,7 +662,27 @@ public sealed class PlanarSystem : ISwitchedSystem
         return total;
     }
 
-    /// <summary>Energy dissipated by cable damping and joint friction since the start of the run, J.</summary>
+    /// <summary>Elastic energy stored in compressed joint-limit stops, Σ ½·k·δ², J.</summary>
+    public double LimitElasticEnergy(ReadOnlySpan<double> state)
+    {
+        CheckLength(state.Length);
+        var total = 0.0;
+        for (var p = 0; p < pins.Length; p++)
+        {
+            if (pins[p].Limit is { } limit)
+            {
+                total += limit.ElasticEnergy(JointAngle(state, p));
+            }
+        }
+
+        return total;
+    }
+
+    /// <summary>All stored elastic energy: cables plus joint-limit stops, J.</summary>
+    public double ElasticEnergy(ReadOnlySpan<double> state) =>
+        CableElasticEnergy(state) + LimitElasticEnergy(state);
+
+    /// <summary>Energy dissipated by cable damping, joint-limit damping and joint friction since the start of the run, J.</summary>
     public double DissipatedEnergy(ReadOnlySpan<double> state)
     {
         CheckLength(state.Length);
@@ -618,9 +696,9 @@ public sealed class PlanarSystem : ISwitchedSystem
         return state[ActuatorWorkIndex];
     }
 
-    /// <summary>Kinetic + gravitational + cable elastic energy, J.</summary>
+    /// <summary>Kinetic + gravitational + elastic (cables and joint limits) energy, J.</summary>
     public double MechanicalEnergy(ReadOnlySpan<double> state) =>
-        KineticEnergy(state) + GravitationalPotentialEnergy(state) + CableElasticEnergy(state);
+        KineticEnergy(state) + GravitationalPotentialEnergy(state) + ElasticEnergy(state);
 
     /// <summary>
     /// Mechanical energy plus energy dissipated so far, minus the work the
@@ -690,6 +768,17 @@ public sealed class PlanarSystem : ISwitchedSystem
                 var torque = friction * RelativeRate(state, p);
                 AddTorque(pinA[p], -torque);
                 AddTorque(pinB[p], torque);
+            }
+
+            if (pins[p].Limit is { } limit)
+            {
+                var angle = JointAngle(state, p);
+                var rate = RelativeRate(state, p);
+                var torque = useLatchedModes
+                    ? limit.TorqueInModes(latchedLowerStops[p], latchedUpperStops[p], angle, rate)
+                    : limit.Torque(angle, rate);
+                AddTorque(pinA[p], torque);
+                AddTorque(pinB[p], -torque);
             }
         }
 
@@ -894,6 +983,25 @@ public sealed class PlanarSystem : ISwitchedSystem
     private double AngularRate(ReadOnlySpan<double> state, ResolvedPoint point) =>
         point.Body == Ground ? 0.0 : state[CoordinateCount + (DofPerBody * point.Body) + 2];
 
+    private double BodyAngle(ReadOnlySpan<double> state, ResolvedPoint point) =>
+        point.Body == Ground ? 0.0 : state[(DofPerBody * point.Body) + 2];
+
+    /// <summary>Joint angle θ_A − θ_B across pin <paramref name="pin"/>, rad.</summary>
+    private double JointAngle(ReadOnlySpan<double> state, int pin) =>
+        BodyAngle(state, pinA[pin]) - BodyAngle(state, pinB[pin]);
+
+    private (ContactMode Lower, ContactMode Upper) LimitModesAt(ReadOnlySpan<double> state, int pin)
+    {
+        if (pins[pin].Limit is not { } limit)
+        {
+            return (ContactMode.Clear, ContactMode.Clear);
+        }
+
+        var angle = JointAngle(state, pin);
+        var rate = RelativeRate(state, pin);
+        return (limit.LowerMode(angle, rate), limit.UpperMode(angle, rate));
+    }
+
     /// <summary>Relative rate ω_A − ω_B across pin <paramref name="pin"/>, rad/s.</summary>
     private double RelativeRate(ReadOnlySpan<double> state, int pin) =>
         AngularRate(state, pinA[pin]) - AngularRate(state, pinB[pin]);
@@ -914,11 +1022,13 @@ public sealed class PlanarSystem : ISwitchedSystem
     }
 
     /// <summary>
-    /// Rate of energy loss in the cable dampers in the latched modes and in
-    /// joint friction, W. Power into a cable is T·L̇ and its stored energy
-    /// changes at k·Δ·L̇, so the damper takes (T − k·Δ)·L̇: c·L̇² when taut,
-    /// −k·Δ·L̇ when recoiling (positive, since then L̇ &lt; −k·Δ/c &lt; 0),
-    /// and nothing when slack. A pin with friction c takes c·Δω².
+    /// Rate of energy loss in the cable and joint-limit dampers in the
+    /// latched modes and in joint friction, W. Power into a cable is T·L̇
+    /// and its stored energy changes at k·Δ·L̇, so the damper takes
+    /// (T − k·Δ)·L̇: c·L̇² when taut, −k·Δ·L̇ when recoiling (positive, since
+    /// then L̇ &lt; −k·Δ/c &lt; 0), and nothing when slack. Joint-limit stops
+    /// follow the same rule (<see cref="ContactLaw.DissipatedPowerInMode"/>).
+    /// A pin with friction c takes c·Δω².
     /// </summary>
     private double DissipatedPower(ReadOnlySpan<double> state)
     {
@@ -943,6 +1053,11 @@ public sealed class PlanarSystem : ISwitchedSystem
             {
                 var rate = RelativeRate(state, p);
                 total += friction * rate * rate;
+            }
+
+            if (pins[p].Limit is { } limit)
+            {
+                total += limit.DissipatedPowerInModes(latchedLowerStops[p], latchedUpperStops[p], JointAngle(state, p), RelativeRate(state, p));
             }
         }
 
@@ -1024,6 +1139,14 @@ public sealed class PlanarSystem : ISwitchedSystem
         if (duplicate is not null)
         {
             throw new ArgumentException($"Duplicate {kind} id '{duplicate.Key}'.", paramName);
+        }
+    }
+
+    private void CheckPin(int pin)
+    {
+        if ((uint)pin >= (uint)pins.Length)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pin), pin, $"System has {pins.Length} pins.");
         }
     }
 

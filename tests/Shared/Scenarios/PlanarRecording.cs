@@ -60,7 +60,7 @@ internal static class PlanarRecording
 
             recorder.Add("kinetic_energy", system.KineticEnergy(s.Values));
             recorder.Add("potential_energy", system.GravitationalPotentialEnergy(s.Values));
-            recorder.Add("elastic_energy", system.CableElasticEnergy(s.Values));
+            recorder.Add("elastic_energy", system.ElasticEnergy(s.Values));
             recorder.Add("dissipated_energy", system.DissipatedEnergy(s.Values));
         });
 

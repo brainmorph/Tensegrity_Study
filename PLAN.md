@@ -73,6 +73,7 @@ All quantities are `float64` (double) inside the core. Nothing is downcast until
   - Compression-only in the intended design. A strut under tension is reported as a configuration error for the chosen topology. An optional debug flag allows tension to validate the solver.
   - Attachment points are body-fixed offsets in the link frame, so cables and joints act at the true points and produce moments.
 - **Pin joint.** Connects a point on one body to a point on another body, or to the ground frame (a fixed pivot). Enforced as a holonomic constraint: the two attachment points coincide. Modeled with Lagrange multipliers (the constraint reaction forces are part of the solution, not inputs).
+- **Joint limit (optional, per pin).** Stops on the joint angle `φ = θ_A − θ_B` (a ground end counts as `θ = 0`), standing in for bone-on-bone contact: two pinned links can only meet by folding about their shared pin. Past a stop, a stiff torsional penalty spring-damper pushes back with a couple `max(0, k·δ + c·δ̇)`, where `δ` is the penetration past the stop. It never pulls. As with cables, the switches between **clear**, **pressing** and **recoiling** are events. Either stop may be left open. The same one-sided law (`ContactLaw`) serves the ground line.
 - **Joint actuator (muscle stand-in).** A torque applied at a pin joint as a function of time or a feedback rule. Used to ask: how much effort does it take to hold or move a configuration? Default is zero torque, so the structure has to hold itself.
 - **Cable — elastic tendon.** Connects two body-fixed attachment points.
   - Axial stiffness `EA` and rest length `L0`, with `k = EA / L0` and `c` a viscous damping coefficient. Tension:
@@ -144,7 +145,7 @@ Each run is a directory, e.g. `runs/2026-11-09_planar-x_seed42/`:
   - `gravity`, `ground` parameters, damping parameters, actuator schedule, RNG seed
   - `topology` — links (id, mass, inertia, attachment points in body frame, initial pose), pins (id, body/ground refs, local points), cables (id, endpoint refs, `L0`, `EA`, damping, prestress), actuators
   - `diagnostics` — energy series, constraint residual maximum, number of event splits, any compression-violation flags for links
-- `frames.bin` — little-endian `float32`, one frame after another, as named channels listed in the manifest (`frame_layout.channels`) so Godot can read it without guessing. Per frame: `time`; per link `x`, `y`, `θ`; per cable tension and both world endpoints; per pin the reaction force (useful for showing where effort goes) and its world position. Endpoints and pin positions are recorded so the renderer places numbers and computes no geometry.
+- `frames.bin` — little-endian `float32`, one frame after another, as named channels listed in the manifest (`frame_layout.channels`) so Godot can read it without guessing. Per frame: `time`; per link `x`, `y`, `θ`; per cable tension and both world endpoints; per pin the reaction force (useful for showing where effort goes) and its world position; per actuator its torque; per pin with a joint limit the limit torque on its end A. Endpoints and pin positions are recorded so the renderer places numbers and computes no geometry.
 
 Why this split: the manifest is small and inspectable; frames are large and binary. Godot's reader parses the JSON and reads floats from a `FileAccess`.
 
