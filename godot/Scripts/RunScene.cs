@@ -8,8 +8,8 @@ namespace Tensegrity.Viewer;
 /// y-up, the screen y-down) and nothing else, so each child holds exactly
 /// the recorded values of the frame on show: links at their recorded
 /// center and angle, cables between their recorded endpoints, pins at
-/// their recorded positions, and the ground line (if any) at its height
-/// from the topology. Nothing is interpolated or derived.
+/// their recorded positions, and the ground line (if any) at its recorded
+/// height. Nothing is interpolated or derived.
 /// </summary>
 public partial class RunScene : Node2D
 {
@@ -20,6 +20,7 @@ public partial class RunScene : Node2D
     private readonly List<CableSlot> cables = [];
     private readonly List<PinSlot> pins = [];
     private RunReader? run;
+    private int groundHeightChannel = -1;
 
     /// <summary>The ground line, or null when the run has none.</summary>
     public GroundView? Ground { get; private set; }
@@ -52,8 +53,10 @@ public partial class RunScene : Node2D
         // Draw order: ground under cables under links under pins.
         if (topology.Ground is { } ground)
         {
-            Ground = new GroundView { Name = "ground", Height = (float)ground.Height };
+            // Runs from before the ground.height channel have a fixed ground at the topology's height.
+            Ground = new GroundView { Name = "ground", Position = new Vector2(0, (float)ground.Height) };
             AddChild(Ground);
+            groundHeightChannel = reader.HasChannel(FrameChannels.GroundHeight) ? reader.ChannelIndex(FrameChannels.GroundHeight) : -1;
         }
 
         foreach (var cable in topology.Cables)
@@ -123,6 +126,11 @@ public partial class RunScene : Node2D
     public void ShowFrame(int frame)
     {
         var values = run!.Frame(frame);
+        if (Ground is not null && groundHeightChannel >= 0)
+        {
+            Ground.Position = new Vector2(0, values[groundHeightChannel]);
+        }
+
         foreach (var slot in links)
         {
             slot.View.Position = new Vector2(values[slot.X], values[slot.Y]);
@@ -175,8 +183,15 @@ public partial class RunScene : Node2D
 
         if (topology.Ground is { } ground && float.IsFinite(min.X))
         {
-            // Keep the line in view: the camera frames the structure and the ground under it.
+            // Keep the line in view at every height it takes: the camera frames the structure and the ground under it.
             Grow(new Vector2(min.X, (float)ground.Height), 0);
+            if (groundHeightChannel >= 0)
+            {
+                for (var f = 0; f < reader.FrameCount; f++)
+                {
+                    Grow(new Vector2(min.X, reader.Frame(f)[groundHeightChannel]), 0);
+                }
+            }
         }
 
         if (!float.IsFinite(min.X) || !float.IsFinite(max.X))
