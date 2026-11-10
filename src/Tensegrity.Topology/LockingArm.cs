@@ -21,6 +21,14 @@ namespace Tensegrity.Topology;
 /// <param name="ElbowInsertion">Where the elbow tendon attaches to the lower link, measured from the elbow, m.</param>
 /// <param name="AxialStiffness">Tendon EA, N.</param>
 /// <param name="TendonDamping">Tendon viscous damping c, N·s/m.</param>
+/// <param name="ElbowFoldStop">
+/// How far the elbow may fold downward from straight before the bones
+/// meet, rad; null for no stop. The default, 150°, leaves 30° between the
+/// links. The elbow is not limited the other way, so the straight-out lock
+/// is the tendon's alone.
+/// </param>
+/// <param name="ElbowStopStiffness">Torsional stiffness of the fold stop, N·m/rad.</param>
+/// <param name="ElbowStopDamping">Torsional damping of the fold stop, N·m·s/rad: about 30% of critical against the lower link.</param>
 public sealed record LockingArmGeometry(
     double UpperLength = 0.30,
     double UpperMass = 0.20,
@@ -33,7 +41,10 @@ public sealed record LockingArmGeometry(
     double ElbowPostAbove = 0.04,
     double ElbowInsertion = 0.10,
     double AxialStiffness = 1000.0,
-    double TendonDamping = 150.0);
+    double TendonDamping = 150.0,
+    double? ElbowFoldStop = 5 * Math.PI / 6,
+    double ElbowStopStiffness = 20.0,
+    double ElbowStopDamping = 0.2);
 
 /// <summary>
 /// The two-link locking arm (PLAN.md section 8, M5): an upper link pinned
@@ -57,7 +68,9 @@ public sealed record LockingArmGeometry(
 ///
 /// The shoulder is at the origin. Pin ends A are the outer links (upper at
 /// the shoulder, lower at the elbow), so a positive holding torque lifts the
-/// arm.
+/// arm. The elbow's joint angle is θ_lower − θ_upper, and its optional fold
+/// stop (<see cref="LockingArmGeometry.ElbowFoldStop"/>) keeps the lower
+/// link from folding through the upper one when the lock fails.
 ///
 /// Tendon tensions come from moment balance at the chosen pose, worked
 /// backwards to rest lengths with <see cref="Cable.RestLengthFor"/>, so the
@@ -151,7 +164,13 @@ public static class LockingArm
         PinJoint[] pins =
         [
             new(Shoulder, Attachment.OnLink(Upper, upper.EndA), Attachment.Ground(Vector2d.Zero)),
-            new(Elbow, Attachment.OnLink(Lower, lower.EndA), Attachment.OnLink(Upper, upper.EndB)),
+            new(
+                Elbow,
+                Attachment.OnLink(Lower, lower.EndA),
+                Attachment.OnLink(Upper, upper.EndB),
+                limit: g.ElbowFoldStop is { } fold
+                    ? new JointLimit(-fold, double.PositiveInfinity, g.ElbowStopStiffness, g.ElbowStopDamping)
+                    : null),
         ];
 
         var system = new PlanarSystem([upper, lower], grav, pins, cables);

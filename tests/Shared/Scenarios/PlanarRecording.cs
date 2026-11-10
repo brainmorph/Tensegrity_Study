@@ -12,7 +12,14 @@ internal static class PlanarRecording
     public const long Steps = 10_000;
     public const long Stride = 500;
 
-    public static IReadOnlyDictionary<string, double[]> Record(PlanarModel model, SystemState state)
+    /// <summary>
+    /// Records the run. For each pin in <paramref name="limitPins"/> it also
+    /// records the extremes over every step of its joint angle
+    /// (<c>min_/max_joint_angle_&lt;pin&gt;</c>) and of its joint-limit torque
+    /// (<c>max_limit_torque_&lt;pin&gt;</c>, largest magnitude), since a stop
+    /// strike can fall between samples.
+    /// </summary>
+    public static IReadOnlyDictionary<string, double[]> Record(PlanarModel model, SystemState state, IReadOnlyList<string>? limitPins = null)
     {
         var system = model.System;
         var stepper = new EventSplittingStepper(new Rk4Integrator(), system);
@@ -22,11 +29,33 @@ internal static class PlanarRecording
         var initialEnergy = system.TotalEnergy(state.Values);
         var maxBalanceError = 0.0;
         var maxPinResidual = 0.0;
+        var watched = (limitPins ?? []).Select(id => system.Pins.Select(p => p.Id).ToList().IndexOf(id)).ToArray();
+        if (watched.Contains(-1))
+        {
+            throw new ArgumentException($"Unknown pin in {string.Join(", ", limitPins!)}.", nameof(limitPins));
+        }
+
+        var limitTorques = new double[system.Pins.Count];
+        var minAngle = watched.Select(_ => double.PositiveInfinity).ToArray();
+        var maxAngle = watched.Select(_ => double.NegativeInfinity).ToArray();
+        var maxTorque = new double[watched.Length];
 
         FixedStepRunner.Run(state, stepper, Dt, Steps, (step, s) =>
         {
             maxBalanceError = Math.Max(maxBalanceError, Math.Abs(system.TotalEnergy(s.Values) - initialEnergy));
             maxPinResidual = Math.Max(maxPinResidual, system.PinPositionResidual(s.Values));
+            if (watched.Length > 0)
+            {
+                system.GetLimitTorques(s.Values, limitTorques);
+                for (var w = 0; w < watched.Length; w++)
+                {
+                    var angle = system.GetJointAngle(s.Values, watched[w]).Angle;
+                    minAngle[w] = Math.Min(minAngle[w], angle);
+                    maxAngle[w] = Math.Max(maxAngle[w], angle);
+                    maxTorque[w] = Math.Max(maxTorque[w], Math.Abs(limitTorques[watched[w]]));
+                }
+            }
+
             if (step % Stride != 0)
             {
                 return;
@@ -68,6 +97,14 @@ internal static class PlanarRecording
         if (reactions.Length > 0)
         {
             recorder.Add("max_pin_residual", maxPinResidual);
+        }
+
+        for (var w = 0; w < watched.Length; w++)
+        {
+            var id = system.Pins[watched[w]].Id;
+            recorder.Add($"min_joint_angle_{id}", minAngle[w]);
+            recorder.Add($"max_joint_angle_{id}", maxAngle[w]);
+            recorder.Add($"max_limit_torque_{id}", maxTorque[w]);
         }
 
         recorder.Add("event_count", stepper.EventCount);

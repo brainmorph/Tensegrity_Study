@@ -150,7 +150,7 @@ public static class ReferenceTopologies
         var model = LockingArm.Create(elbowRestLengthScale: ArmCollapseScale);
         return model.With(
             name: "locking_arm_collapse",
-            description: ArmSummary + ", except the elbow tendon is 10% longer than the lock needs, past its threshold of about 8.2%. Released at rest from straight out, the lower link collapses.",
+            description: ArmSummary + ", except the elbow tendon is 10% longer than the lock needs, past its threshold of about 8.2%. Released at rest from straight out, the lower link collapses, strikes the elbow's fold stop at 150 degrees (k 20 N m/rad, c 0.2 N m s/rad) and rebounds.",
             simulation: DefaultSimulation());
     }
 

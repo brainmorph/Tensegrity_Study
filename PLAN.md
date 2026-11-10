@@ -194,7 +194,7 @@ Purpose: when we make progress, we find out immediately if something that used t
 **Reference set (grows with milestones):**
 - M1: free-body fall, spinning body, pendulum.
 - M2: planar two-strut tensegrity (`planar_x` on pinned feet under gravity, `planar_x_free` floating), single cable oscillator (`cable_oscillator`, damped, through taut, recoiling and slack).
-- M5: two-link locking arm (`locking_arm` locked after a kick, `locking_arm_collapse` with the elbow tendon past its threshold).
+- M5: two-link locking arm (`locking_arm` locked after a kick, `locking_arm_collapse` with the elbow tendon past its threshold). At M6 the arm gained an elbow fold stop at 150°, and the collapse baseline was updated on purpose to include the strike and rebound.
 
 ## 8. Milestones
 

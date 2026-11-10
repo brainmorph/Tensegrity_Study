@@ -86,18 +86,19 @@ public sealed class LockingArmScenario : IReferenceScenario
 /// <summary>
 /// Test 10 reference run, collapsed case: the elbow tendon 10% longer than
 /// the lock needs, past its threshold. Released from straight out, the lower
-/// link falls and swings through its tendon going slack and taut.
+/// link falls with its tendon going slack and taut, strikes the elbow's fold
+/// stop and rebounds.
 /// </summary>
 public sealed class LockingArmCollapseScenario : IReferenceScenario
 {
     public string Name => "locking_arm_collapse";
 
     public string Description =>
-        "Two-link locking arm as in locking_arm, but the elbow tendon rest length is 1.10x the design value, past the 1.082 lock threshold. Released at rest from straight out; the lower link collapses and swings. RK4 with event splitting, dt 1e-4 s, 1 s, sampled every 0.05 s.";
+        "Two-link locking arm as in locking_arm, but the elbow tendon rest length is 1.10x the design value, past the 1.082 lock threshold. Released at rest from straight out; the lower link collapses, strikes the elbow fold stop at 150 degrees (k 20 N m/rad, c 0.2 N m s/rad) and rebounds. RK4 with event splitting, dt 1e-4 s, 1 s, sampled every 0.05 s.";
 
     public IReadOnlyDictionary<string, double[]> Run()
     {
         var model = Arm.Collapsing();
-        return PlanarRecording.Record(model, model.CreateInitialState());
+        return PlanarRecording.Record(model, model.CreateInitialState(), [LockingArm.Elbow]);
     }
 }

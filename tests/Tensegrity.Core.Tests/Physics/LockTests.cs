@@ -148,4 +148,19 @@ public class LockTests
         Assert.True(Arm.CollapseScale > Statics.ElbowFold().Scale);
         Assert.True(Degrees(minElbow) < -90, $"The elbow only reached {Degrees(minElbow)}°.");
     }
+
+    [Fact]
+    public void TheFoldStopCatchesTheCollapsingForearm()
+    {
+        // Without the stop the forearm folds to about −169.5° before swinging
+        // back; with it, it strikes at −150° and gives only a few degrees.
+        var free = LockingArm.Create(new LockingArmGeometry(ElbowFoldStop: null), elbowRestLengthScale: Arm.CollapseScale);
+        var stopped = Arm.Collapsing();
+
+        var (_, _, freeElbow, _) = Run(free, free.CreateInitialState(), 1.0);
+        var (_, _, stoppedElbow, _) = Run(stopped, stopped.CreateInitialState(), 1.0);
+
+        Assert.InRange(Degrees(freeElbow), -170.0, -168.0);
+        Assert.InRange(Degrees(stoppedElbow), -155.0, -150.0);
+    }
 }

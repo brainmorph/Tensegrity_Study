@@ -26,7 +26,14 @@
   "max_energy_balance_error": { "absolute": 5e-12, "relative": 0 },
   // Worst pin position error, m. Measured ~4e-14.
   "max_pin_residual": { "absolute": 1e-12, "relative": 0 },
-  // Tendon slack/taut switches. A change here means the collapse changed.
+  // Run-wide extremes of the elbow joint angle (rad) and of its fold-stop
+  // torque magnitude (N m), checked at every step because a stop strike
+  // lasts about one 0.05 s sample. Angles as poses; torque as tensions.
+  "min_joint_angle_elbow": { "absolute": 1e-10, "relative": 0 },
+  "max_joint_angle_elbow": { "absolute": 1e-10, "relative": 0 },
+  "max_limit_torque_elbow": { "absolute": 1e-8, "relative": 1e-9 },
+  // Tendon slack/taut and fold-stop switches. A change here means the
+  // collapse changed.
   "event_count": { "absolute": 0, "relative": 0 },
   "unresolved_steps": { "absolute": 0, "relative": 0 }
 }

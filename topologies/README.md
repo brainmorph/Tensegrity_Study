@@ -26,7 +26,7 @@ Tests hold each file equal to the catalog, and each catalog entry bit-identical 
 | `planar_x_rest.json` | The same X at rest. It holds its prestressed shape with no actuators. |
 | `planar_x_free.json` | The X floating with no gravity, its shape disturbed with zero total momentum. Rings down to its shape. |
 | `locking_arm.json` | Two-link arm held straight out by one tendon per joint, with no muscle torque. The lower link is kicked downward, the lock holds, and the arm rings back to straight out. |
-| `locking_arm_collapse.json` | The same arm with its elbow tendon 10% too long, past the lock threshold. Released from straight out, the lower link collapses. |
+| `locking_arm_collapse.json` | The same arm with its elbow tendon 10% too long, past the lock threshold. Released from straight out, the lower link collapses, strikes the elbow's fold stop at 150° and rebounds. |
 
 Hand-authored topologies can live here too. Files may contain `//` comments.
 
@@ -48,13 +48,13 @@ Results at commit `78ce212`. The change on halving dt = 1e-4 s estimates the err
 | planar_x_rest | 9.4e-18 | (static: rounding only) | 5.3e-15 J | 0 |
 | planar_x_free | 1.4e-12 | 15.0, 14.4, 15.3 | 3.2e-10 J | 0 |
 | locking_arm | 2.0e-14 | 16.5, 17.3, then at the rounding floor | 7.4e-13 J | 0 |
-| locking_arm_collapse | 1.8e-12 | 14.9, 10.6, 10.6 | 5.2e-13 J | 9 at every level |
+| locking_arm_collapse | 8.6e-12 | 16.0, 18.4, 9.7 | 9.8e-13 J | 13 at every level |
 
-The locking arm rows were added at M5 (after commit `67acd3b`). The collapsing arm falls by about 10.6 rather than 16 per halving below 2e-4 s. Its 9 tendon slack/taut switches are located to 1e-12 s, and the trajectory swings through large angles, so some error does not scale with dt⁴. The change at 1e-4 s is still 1.8e-12, far below float32 precision.
+The locking arm rows were added at M5 (after commit `67acd3b`). The collapse row was rerun at M6, when the arm gained its elbow fold stop (Section 4.1 of PLAN.md): the falling forearm now strikes the stop at 150° instead of folding on to about 170°. Its 13 tendon and stop switches are located to 1e-12 s at every level. The ratio is 16–18 down to 1e-4 s and drops to 9.7 on the last halving, where the change (8.9e-13) nears the rounding floor of a run through large angles and many events. The change at 1e-4 s is 8.6e-12, far below float32 precision.
 
 Why 1e-4 s:
 
-- **Converged.** Halving the step changes no position or angle by more than 6e-12 m or rad. That is at least 10⁴ times below the float32 precision the frames are stored in (about 6e-8 at 1 m).
+- **Converged.** Halving the step changes no position or angle by more than 9e-12 m or rad. That is at least 10⁴ times below the float32 precision the frames are stored in (about 6e-8 at 1 m).
 - **In RK4's asymptotic range.** The change falls by about 16 per halving from 4e-4 s down, until it reaches the rounding floor. Event-splitting keeps the cable oscillator at this order, and it finds the same 9 switches at every step size.
 - **Energy of the X.** The X's energy balance error falls more slowly at the larger steps: 7.5–8× from 4e-4 s, then 12.6–12.8×, then 14.4–15×. Its stiff cable modes (ω·dt ≈ 0.03) are still entering the asymptotic range there. The trajectory is already asymptotic, and the balance error is at most 3.2e-10 J, so the X needs no smaller step.
 - **Consistent.** All golden baselines and test tolerances were set at 1e-4 s.
