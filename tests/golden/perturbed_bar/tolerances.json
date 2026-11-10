@@ -1,0 +1,32 @@
+{
+  // Hand-written (PLAN.md 7a). Same reasoning as ground_drop: the run is
+  // deterministic, so poses use 1e-10. The dt study puts the change on
+  // halving dt = 1e-4 s at 3.0e-11 over 2 s; this baseline only guards
+  // against change at fixed dt.
+  "time": { "absolute": 1e-12, "relative": 0 },
+  "bar_x": { "absolute": 1e-10, "relative": 0 },
+  "bar_y": { "absolute": 1e-10, "relative": 0 },
+  "bar_theta": { "absolute": 1e-10, "relative": 0 },
+  // Contact forces, N: as in ground_drop, the 1e4 N/m springs magnify a
+  // pose change, hence the absolute 1e-6.
+  "contact_left_normal": { "absolute": 1e-6, "relative": 1e-9 },
+  "contact_left_friction": { "absolute": 1e-6, "relative": 1e-9 },
+  "contact_right_normal": { "absolute": 1e-6, "relative": 1e-9 },
+  "contact_right_friction": { "absolute": 1e-6, "relative": 1e-9 },
+  "kinetic_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "potential_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "elastic_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "dissipated_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  // Work done by the knock (the falling ground does none: it recoils at
+  // once), J.
+  "external_work": { "absolute": 1e-10, "relative": 1e-10 },
+  // Worst |E_total(t) - E_total(0)|, J. Measured 3.3e-8 over 2 s at
+  // dt = 1e-4 s, falling 16x per halving: integration error at the
+  // landings.
+  "max_energy_balance_error": { "absolute": 1e-7, "relative": 0 },
+  // Deepest penetration of either end below the line over every step, m.
+  "max_ground_penetration": { "absolute": 1e-10, "relative": 0 },
+  // Ground, load and contact switches. A change here means the run changed.
+  "event_count": { "absolute": 0, "relative": 0 },
+  "unresolved_steps": { "absolute": 0, "relative": 0 }
+}

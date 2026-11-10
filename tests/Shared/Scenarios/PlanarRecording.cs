@@ -8,7 +8,8 @@ namespace Tensegrity.Testing.Scenarios;
 
 /// <summary>
 /// Records poses, tensions, pin reactions, ground contact forces and energy
-/// for a planar structure run: 1 s at dt 1e-4 s, sampled every 0.05 s.
+/// (with external work when there are loads or a moving ground) for a
+/// planar structure run: 1 s at dt 1e-4 s, sampled every 0.05 s.
 /// </summary>
 internal static class PlanarRecording
 {
@@ -35,6 +36,7 @@ internal static class PlanarRecording
         var maxPinResidual = 0.0;
         var contactForces = new Vector2d[system.ContactCount];
         var maxPenetration = double.NegativeInfinity;
+        var recordsExternalWork = system.Loads.Count > 0 || system.GroundLine is { IsMoving: true };
         var watched = (limitPins ?? []).Select(id => system.Pins.Select(p => p.Id).ToList().IndexOf(id)).ToArray();
         if (watched.Contains(-1))
         {
@@ -113,6 +115,10 @@ internal static class PlanarRecording
             recorder.Add("potential_energy", system.GravitationalPotentialEnergy(s.Values));
             recorder.Add("elastic_energy", system.ElasticEnergy(s.Values));
             recorder.Add("dissipated_energy", system.DissipatedEnergy(s.Values));
+            if (recordsExternalWork)
+            {
+                recorder.Add("external_work", system.ExternalWork(s.Values));
+            }
         });
 
         recorder.Add("max_energy_balance_error", maxBalanceError);

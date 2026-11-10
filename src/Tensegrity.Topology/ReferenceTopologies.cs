@@ -39,7 +39,7 @@ public static class ReferenceTopologies
     public const double ArmCollapseScale = 1.10;
 
     public static IReadOnlyList<string> Names { get; } =
-        ["pendulum", "cable_oscillator", "planar_x", "planar_x_rest", "planar_x_free", "locking_arm", "locking_arm_collapse", "ground_drop"];
+        ["pendulum", "cable_oscillator", "planar_x", "planar_x_rest", "planar_x_free", "locking_arm", "locking_arm_collapse", "ground_drop", "perturbed_bar"];
 
     public static PlanarModel Create(string name) => name switch
     {
@@ -51,6 +51,7 @@ public static class ReferenceTopologies
         "locking_arm" => LockingArmKicked(),
         "locking_arm_collapse" => LockingArmCollapse(),
         "ground_drop" => GroundDrop(),
+        "perturbed_bar" => PerturbedBarCase(),
         _ => throw new ArgumentException($"Unknown reference topology '{name}'. Known: {string.Join(", ", Names)}.", nameof(name)),
     };
 
@@ -160,6 +161,13 @@ public static class ReferenceTopologies
         DroppedBar.Create().With(
             name: "ground_drop",
             description: "Slender bar, 1 m / 1 kg, with a contact point at each end, dropped on to the ground line y = 0 under standard gravity: center 0.4 m up, tilted 30 degrees, moving at 1.5 m/s in +x and turning at -2 rad/s. Ground: normal k 1e4 N/m, c 60 N s/m; Coulomb friction mu 0.5 through a tangential spring 1e4 N/m and damper 60 N s/m in series with a slider. It lands on one end, bounces, slides and comes to rest lying flat.",
+            simulation: DefaultSimulation());
+
+    /// <summary>The bar at rest on the ground, which falls away under it; then a knock at one end.</summary>
+    public static PlanarModel PerturbedBarCase() =>
+        PerturbedBar.Create().With(
+            name: "perturbed_bar",
+            description: "The ground_drop bar (1 m, 1 kg, same ground) lying at rest on the ground line. At 0.1 s the ground falls 0.1 m in 10 ms, faster than the bar can follow; the bar falls after it and lands. At 0.5 s a 5 ms triangular pulse of (0.3, 0.6) N s at the right end knocks it up and sideways; it rocks, lands and settles flat by about 0.8 s.",
             simulation: DefaultSimulation());
 
     /// <summary>The free-floating X with no gravity, after opposite twists on its struts (zero total momentum).</summary>

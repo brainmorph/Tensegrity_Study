@@ -77,6 +77,12 @@ public sealed class ReferenceTopologyTests : IDisposable
                 return (model.System, model.InitialState.ToArray());
             }
 
+            case "perturbed_bar":
+            {
+                var model = PerturbedBar.Create();
+                return (model.System, model.InitialState.ToArray());
+            }
+
             default:
                 throw new ArgumentException(name);
         }

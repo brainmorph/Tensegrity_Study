@@ -3,6 +3,7 @@ using Tensegrity.Core.Elements;
 using Tensegrity.Core.Integration;
 using Tensegrity.Core.Mathematics;
 using Tensegrity.Core.Systems;
+using Tensegrity.Topology;
 
 namespace Tensegrity.Core.Tests.Physics;
 
@@ -128,6 +129,29 @@ public class MovingGroundTests
         var errors = new[] { 4e-4, 2e-4, 1e-4 }.Select(dt => Math.Abs(FinalY(dt) - reference)).ToArray();
         Assert.InRange(errors[0] / errors[1], 12.0, 20.0);
         Assert.InRange(errors[1] / errors[2], 12.0, 20.0);
+    }
+
+    [Fact]
+    public void ReferenceBarLandsWhenFreeFallSaysAfterTheGroundFallsAway()
+    {
+        // perturbed_bar: the line drops 0.1 m in 10 ms. The contacts recoil at
+        // once, so the bar falls from rest and lands after falling 0.1 m less
+        // its static sink: t = t0 + √(2·(0.1 − sink)/g).
+        var model = PerturbedBar.Create();
+        var system = model.System;
+        var state = model.CreateInitialState();
+        var landed = double.NaN;
+
+        FixedStepRunner.Run(state, Stepper(system), 1e-4, 3_000, (_, s) =>
+        {
+            if (double.IsNaN(landed) && s.Time > PerturbedBar.DropStart && system.GetContactModes(s.Time, s.Values, 0).Normal == ContactMode.Pressing)
+            {
+                landed = s.Time;
+            }
+        });
+
+        var expected = PerturbedBar.DropStart + Math.Sqrt(2 * (PerturbedBar.DropDepth - Sink) / G);
+        Assert.InRange(landed - expected, 0.0, 1e-4);
     }
 
     [Fact]

@@ -1,0 +1,100 @@
+{
+  "format_version": 1,
+  "name": "perturbed_bar",
+  "description": "The ground_drop bar (1 m, 1 kg, same ground) lying at rest on the ground line. At 0.1 s the ground falls 0.1 m in 10 ms, faster than the bar can follow; the bar falls after it and lands. At 0.5 s a 5 ms triangular pulse of (0.3, 0.6) N s at the right end knocks it up and sideways; it rocks, lands and settles flat by about 0.8 s.",
+  "gravity": [
+    0,
+    -9.81
+  ],
+  "constraint_stabilization": 50,
+  "links": [
+    {
+      "id": "bar",
+      "role": "link",
+      "mass": 1,
+      "inertia": 0.08333333333333333,
+      "length": 1,
+      "pose": {
+        "x": 0,
+        "y": -0.0004905,
+        "theta": 0
+      },
+      "twist": {
+        "vx": 0,
+        "vy": 0,
+        "omega": 0
+      }
+    }
+  ],
+  "pins": [],
+  "cables": [],
+  "loads": [
+    {
+      "id": "knock",
+      "link": "bar",
+      "point": [
+        0.5,
+        0
+      ],
+      "schedule": [
+        {
+          "time": 0.5,
+          "fx": 0,
+          "fy": 0
+        },
+        {
+          "time": 0.5025,
+          "fx": 120,
+          "fy": 240
+        },
+        {
+          "time": 0.505,
+          "fx": 0,
+          "fy": 0
+        }
+      ]
+    }
+  ],
+  "ground": {
+    "height": 0,
+    "height_schedule": [
+      {
+        "time": 0.1,
+        "height": 0
+      },
+      {
+        "time": 0.11,
+        "height": -0.1
+      }
+    ],
+    "normal_stiffness": 10000,
+    "normal_damping": 60,
+    "friction": 0.5,
+    "tangential_stiffness": 10000,
+    "tangential_damping": 60,
+    "contacts": [
+      {
+        "id": "left",
+        "link": "bar",
+        "point": [
+          -0.5,
+          0
+        ]
+      },
+      {
+        "id": "right",
+        "link": "bar",
+        "point": [
+          0.5,
+          0
+        ]
+      }
+    ]
+  },
+  "simulation": {
+    "dt": 0.0001,
+    "duration": 2,
+    "frame_stride": 100,
+    "event_tolerance": 1E-12
+  }
+}

@@ -31,6 +31,7 @@ public class ReferenceScenarioTests
 
         // M6
         new GroundDropScenario(),
+        new PerturbedBarScenario(),
     ];
 
     public static TheoryData<string> All() => new(Scenarios.Select(s => s.Name));
