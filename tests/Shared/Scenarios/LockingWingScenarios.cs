@@ -18,6 +18,13 @@ public static class Wing
     public static PlanarModel Gusted() =>
         LockingWing.Create(loads: [LockingWing.WingtipGust(ReferenceTopologies.WingGustImpulse, ReferenceTopologies.WingGustStart, ReferenceTopologies.WingGustDuration)]);
 
+    /// <summary>The straight wing preloaded against hyperextension stops at the elbow and wrist, at rest.</summary>
+    public static PlanarModel Preloaded() => LockingWing.Create(ReferenceTopologies.PreloadedWing);
+
+    /// <summary>The preloaded wing with the reference gust at its tip.</summary>
+    public static PlanarModel PreloadedGusted() =>
+        LockingWing.Create(ReferenceTopologies.PreloadedWing, loads: [LockingWing.WingtipGust(ReferenceTopologies.WingGustImpulse, ReferenceTopologies.WingGustStart, ReferenceTopologies.WingGustDuration)]);
+
     /// <summary>The wing with its wrist tendon lengthened past the fold, released from straight out.</summary>
     public static PlanarModel Collapsing() => LockingWing.Create(restLengthScales: [1, 1, ReferenceTopologies.WingCollapseScale]);
 

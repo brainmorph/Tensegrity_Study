@@ -45,6 +45,15 @@ public static class ReferenceTopologies
     public const double WingGustDuration = 0.02;
     public const double WingCollapseScale = 1.08;
 
+    // Preloaded wing: hyperextension stops at the elbow and wrist, each
+    // preloaded by about its own joint's gravity moment (0.486 and 0.074 N m).
+    public const double WingElbowPreload = 0.5;
+    public const double WingWristPreload = 0.075;
+
+    /// <summary>The wing with hyperextension stops, its elbow and wrist tendons preloading them.</summary>
+    public static LockingWingGeometry PreloadedWing { get; } =
+        new(HyperextensionStops: true, ElbowPreload: WingElbowPreload, WristPreload: WingWristPreload);
+
     public static IReadOnlyList<string> Names { get; } =
         ["pendulum", "cable_oscillator", "planar_x", "planar_x_rest", "planar_x_free", "locking_arm", "locking_arm_collapse", "ground_drop", "perturbed_bar", "locking_wing", "locking_wing_collapse"];
 

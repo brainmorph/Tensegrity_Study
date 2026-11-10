@@ -14,7 +14,8 @@ public sealed record ChainFold(int Tendon, double Scale, IReadOnlyList<double> A
 /// <code>
 /// V(θ) = g·Σ mᵢ·yᵢ + Σ ½·k·(L − s·L0)²   (stretched tendons only)
 /// </code>
-/// and k = EA / (s·L0). Tendon j runs from an anchor behind and above joint j
+/// and k = EA / (s·L0), plus ½·κⱼ·(φⱼ − uⱼ)² for each joint j pressed past
+/// a hyperextension stop at uⱼ (φⱼ = θⱼ − θⱼ₋₁, κⱼ its stiffness). Tendon j runs from an anchor behind and above joint j
 /// (on the ground for the shoulder, else on link j − 1) to a point on link j.
 /// Turning link k alone about its inner joint Jₖ (its world angle θₖ) moves a
 /// point P of link k as ⊥(P − Jₖ) and carries every outer link along by
@@ -31,13 +32,15 @@ public sealed class ChainStatics
 {
     private readonly Segment[] links;
     private readonly Tendon[] tendons;
+    private readonly Stop?[] stops;
     private readonly double axialStiffness;
     private readonly double gravity;
 
-    private ChainStatics(Segment[] links, Tendon[] tendons, double axialStiffness, double gravity)
+    private ChainStatics(Segment[] links, Tendon[] tendons, double axialStiffness, double gravity, Stop?[]? stops = null)
     {
         this.links = links;
         this.tendons = tendons;
+        this.stops = stops ?? new Stop?[links.Length];
         this.axialStiffness = axialStiffness;
         this.gravity = gravity;
     }
@@ -59,12 +62,20 @@ public sealed class ChainStatics
             9.81);
     }
 
-    /// <summary>Statics of a three-link <see cref="LockingWing"/>, with the rest lengths its model carries at scale 1.</summary>
+    /// <summary>
+    /// Statics of a three-link <see cref="LockingWing"/> designed straight
+    /// out, with the rest lengths its model carries at scale 1. Hyperextension
+    /// stops are placed from the geometry, preload / stiffness short of
+    /// straight, not read from the model.
+    /// </summary>
     public static ChainStatics ForWing(PlanarModel scaleOne, LockingWingGeometry? geometry = null)
     {
         var w = geometry ?? new LockingWingGeometry();
         var g = w.ArmGeometry;
         var c = scaleOne.System.Cables;
+        Stop?[] stops = w.HyperextensionStops
+            ? [null, new Stop(-w.ElbowPreload / g.ElbowStopStiffness, g.ElbowStopStiffness), new Stop(-w.WristPreload / w.WristStopStiffness, w.WristStopStiffness)]
+            : [null, null, null];
         return new ChainStatics(
             [new Segment(g.UpperLength, g.UpperMass), new Segment(g.LowerLength, g.LowerMass), new Segment(w.HandLength, w.HandMass)],
             [
@@ -73,7 +84,8 @@ public sealed class ChainStatics
                 new Tendon(w.WristPostBehind, w.WristPostAbove, w.WristInsertion, c[2].RestLength),
             ],
             g.AxialStiffness,
-            9.81);
+            9.81,
+            stops);
     }
 
     /// <summary>The potential V at the pose, J, with tendon rest lengths scaled by <paramref name="scales"/>.</summary>
@@ -105,6 +117,15 @@ public sealed class ChainStatics
             if (length > rest)
             {
                 v += 0.5 * (axialStiffness / rest) * (length - rest) * (length - rest);
+            }
+        }
+
+        for (var j = 1; j < n; j++)
+        {
+            var past = StopPenetration(angles, j);
+            if (past > 0)
+            {
+                v += 0.5 * stops[j]!.Value.Stiffness * past * past;
             }
         }
 
@@ -162,6 +183,18 @@ public sealed class ChainStatics
             {
                 var moved = Moves(insertion, j, k) - (j > 0 ? Moves(anchor, j - 1, k) : Vector2d.Zero);
                 d[k] += tension * Vector2d.Dot(dir, moved);
+            }
+        }
+
+        // A stop's torque turns link j down and link j − 1 up.
+        for (var j = 1; j < n; j++)
+        {
+            var past = StopPenetration(angles, j);
+            if (past > 0)
+            {
+                var torque = stops[j]!.Value.Stiffness * past;
+                d[j] += torque;
+                d[j - 1] -= torque;
             }
         }
 
@@ -390,6 +423,18 @@ public sealed class ChainStatics
         return new ChainFold(tendon, solved[^1], Angles(peak, solved));
     }
 
+    /// <summary>
+    /// The torque joint <paramref name="joint"/>'s hyperextension stop
+    /// carries at the pose, N·m (pushing the outer link down); zero off its
+    /// stop or without one.
+    /// </summary>
+    public double StopTorque(IReadOnlyList<double> angles, int joint) =>
+        joint > 0 && StopPenetration(angles, joint) is var past && past > 0 ? stops[joint]!.Value.Stiffness * past : 0;
+
+    /// <summary>How far joint j is past its hyperextension stop, rad; −∞ without one.</summary>
+    private double StopPenetration(IReadOnlyList<double> angles, int joint) =>
+        stops[joint] is { } stop ? angles[joint] - angles[joint - 1] - stop.Angle : double.NegativeInfinity;
+
     private double[] Newton(IReadOnlyList<double> scales, double[] guess)
     {
         var angles = (double[])guess.Clone();
@@ -469,6 +514,9 @@ public sealed class ChainStatics
     private static Vector2d Perp(Vector2d v) => new(-v.Y, v.X);
 
     private readonly record struct Segment(double Length, double Mass);
+
+    /// <summary>A hyperextension stop on a joint angle: where it starts to push, rad, and its torsional stiffness, N·m/rad.</summary>
+    private readonly record struct Stop(double Angle, double Stiffness);
 
     /// <summary>A tendon: its anchor behind and above its joint, its insertion along the next link, and its rest length at scale 1.</summary>
     private readonly record struct Tendon(double Behind, double Above, double Insertion, double RestLength);

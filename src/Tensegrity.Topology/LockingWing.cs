@@ -20,6 +20,17 @@ namespace Tensegrity.Topology;
 /// <param name="WristFoldStop">How far the wrist may fold downward from straight before the bones meet, rad; null for no stop.</param>
 /// <param name="WristStopStiffness">Torsional stiffness of the wrist fold stop, N·m/rad.</param>
 /// <param name="WristStopDamping">Torsional damping of the wrist fold stop, N·m·s/rad: about 30% of critical against the hand.</param>
+/// <param name="HyperextensionStops">
+/// Whether the elbow and wrist have stops against bending upward past the
+/// design pose, with the same stiffness and damping as their fold stops.
+/// The shoulder has none.
+/// </param>
+/// <param name="ElbowPreload">
+/// Torque the elbow's hyperextension stop carries in the design pose, N·m:
+/// the elbow tendon is tensioned to pull the lower link into its stop this
+/// hard on top of holding its weight. Needs <paramref name="HyperextensionStops"/>.
+/// </param>
+/// <param name="WristPreload">The same for the wrist, N·m.</param>
 public sealed record LockingWingGeometry(
     LockingArmGeometry? Arm = null,
     double HandLength = 0.25,
@@ -29,7 +40,10 @@ public sealed record LockingWingGeometry(
     double WristInsertion = 0.07,
     double? WristFoldStop = 5 * Math.PI / 6,
     double WristStopStiffness = 5.0,
-    double WristStopDamping = 0.05)
+    double WristStopDamping = 0.05,
+    bool HyperextensionStops = false,
+    double ElbowPreload = 0,
+    double WristPreload = 0)
 {
     /// <summary>The arm part, with <see cref="LockingArmGeometry"/>'s defaults if none was given.</summary>
     public LockingArmGeometry ArmGeometry => Arm ?? new LockingArmGeometry();
@@ -53,6 +67,14 @@ public sealed record LockingWingGeometry(
 /// and hand about the elbow, and the shoulder tendon that of all three about
 /// the shoulder. The elbow and wrist have fold stops so a collapsing link
 /// cannot fold through the one before it.
+///
+/// Optionally the elbow and wrist also have hyperextension stops, and their
+/// tendons can be designed shorter so they preload each joint up into its
+/// stop. A penalty stop pushes only once the joint is past it, so a stop
+/// preloaded by P sits P/k short of the design pose (k its stiffness): in
+/// that pose it carries exactly P and the pose stays an exact equilibrium.
+/// Gravity pulls the joints away from these stops, so without a preload
+/// they only catch the wing flicking up.
 ///
 /// The shoulder is at the origin. Pin ends A are the outer links, so a
 /// positive holding torque lifts the wing; each joint angle is the outer
@@ -123,6 +145,19 @@ public static class LockingWing
             throw new ArgumentOutOfRangeException(nameof(geometry), w.WristInsertion, $"The wrist insertion must lie on the hand, in (0, {w.HandLength}].");
         }
 
+        foreach (var (name, preload) in new[] { (nameof(w.ElbowPreload), w.ElbowPreload), (nameof(w.WristPreload), w.WristPreload) })
+        {
+            if (!double.IsFinite(preload) || preload < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(geometry), preload, $"{name} must be finite and not negative.");
+            }
+
+            if (preload > 0 && !w.HyperextensionStops)
+            {
+                throw new ArgumentException($"{name} needs hyperextension stops to push against.", nameof(geometry));
+            }
+        }
+
         var upper = PlanarLink.SlenderBar(Upper, g.UpperMass, g.UpperLength);
         var lower = PlanarLink.SlenderBar(Lower, g.LowerMass, g.LowerLength);
         var hand = PlanarLink.SlenderBar(Hand, w.HandMass, w.HandLength);
@@ -143,25 +178,26 @@ public static class LockingWing
 
         double Moment(Vector2d r, double mass) => Vector2d.Cross(r, mass * grav);
 
-        // Wrist: the hand about the wrist.
+        // Wrist: the hand about the wrist, and the preloaded stop pushing it down.
         var wristPostWorld = lowerPose.ToWorld(wristPost);
         var wristInsertionWorld = handPose.ToWorld(wristInsertion);
         var wristTension = Balance(
-            Moment(handPose.Position - wrist, w.HandMass),
+            Moment(handPose.Position - wrist, w.HandMass) - w.WristPreload,
             wristInsertionWorld - wrist,
             wristPostWorld - wristInsertionWorld,
             WristTendon);
 
-        // Elbow: the lower link and hand about the elbow (the wrist tendon is internal to them).
+        // Elbow: the lower link and hand about the elbow, and the preloaded
+        // stop pushing them down (the wrist tendon and stop are internal to them).
         var elbowPostWorld = upperPose.ToWorld(elbowPost);
         var elbowInsertionWorld = lowerPose.ToWorld(elbowInsertion);
         var elbowTension = Balance(
-            Moment(lowerPose.Position - elbow, g.LowerMass) + Moment(handPose.Position - elbow, w.HandMass),
+            Moment(lowerPose.Position - elbow, g.LowerMass) + Moment(handPose.Position - elbow, w.HandMass) - w.ElbowPreload,
             elbowInsertionWorld - elbow,
             elbowPostWorld - elbowInsertionWorld,
             ElbowTendon);
 
-        // Shoulder: all three about the shoulder.
+        // Shoulder: all three about the shoulder (the elbow and wrist stops are internal).
         var shoulderInsertionWorld = upperPose.ToWorld(shoulderInsertion);
         var shoulderTension = Balance(
             Moment(upperPose.Position, g.UpperMass) + Moment(lowerPose.Position, g.LowerMass) + Moment(handPose.Position, w.HandMass),
@@ -179,14 +215,19 @@ public static class LockingWing
             Tendon(WristTendon, Attachment.OnLink(Lower, wristPost), Attachment.OnLink(Hand, wristInsertion), (wristPostWorld - wristInsertionWorld).Length, wristTension, scales[2]),
         ];
 
-        static JointLimit? Fold(double? stop, double stiffness, double damping) =>
-            stop is { } fold ? new JointLimit(-fold, double.PositiveInfinity, stiffness, damping) : null;
+        // A fold stop at −fold, and a hyperextension stop preload / k short of the design joint angle.
+        JointLimit? Limit(double? fold, double design, double preload, double stiffness, double damping)
+        {
+            var lower = fold is { } f ? -f : double.NegativeInfinity;
+            var upperStop = w.HyperextensionStops ? design - (preload / stiffness) : double.PositiveInfinity;
+            return double.IsFinite(lower) || double.IsFinite(upperStop) ? new JointLimit(lower, upperStop, stiffness, damping) : null;
+        }
 
         PinJoint[] pins =
         [
             new(Shoulder, Attachment.OnLink(Upper, upper.EndA), Attachment.Ground(Vector2d.Zero)),
-            new(Elbow, Attachment.OnLink(Lower, lower.EndA), Attachment.OnLink(Upper, upper.EndB), limit: Fold(g.ElbowFoldStop, g.ElbowStopStiffness, g.ElbowStopDamping)),
-            new(Wrist, Attachment.OnLink(Hand, hand.EndA), Attachment.OnLink(Lower, lower.EndB), limit: Fold(w.WristFoldStop, w.WristStopStiffness, w.WristStopDamping)),
+            new(Elbow, Attachment.OnLink(Lower, lower.EndA), Attachment.OnLink(Upper, upper.EndB), limit: Limit(g.ElbowFoldStop, theta[1] - theta[0], w.ElbowPreload, g.ElbowStopStiffness, g.ElbowStopDamping)),
+            new(Wrist, Attachment.OnLink(Hand, hand.EndA), Attachment.OnLink(Lower, lower.EndB), limit: Limit(w.WristFoldStop, theta[2] - theta[1], w.WristPreload, w.WristStopStiffness, w.WristStopDamping)),
         ];
 
         var system = new PlanarSystem([upper, lower, hand], grav, pins, cables, loads: loads);
