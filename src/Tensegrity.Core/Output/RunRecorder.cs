@@ -125,6 +125,7 @@ public static class RunRecorder
             EventTolerance = settings.EventTolerance,
             Gravity = [system.Gravity.X, system.Gravity.Y],
             Ground = system.GroundLine is null ? null : GroundModels.PenaltyCoulomb,
+            GlobalDamping = system.GlobalDamping,
             Actuators = TopologyMapping.ActuatorDocuments(system),
             Seed = metadata.Seed,
             TopologySource = metadata.TopologySource,

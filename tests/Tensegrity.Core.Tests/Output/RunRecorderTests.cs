@@ -432,6 +432,27 @@ public sealed class RunRecorderTests : IDisposable
     }
 
     [Fact]
+    public void GlobalDampingIsRecordedInTheManifestAndTopology()
+    {
+        var bar = PlanarLink.SlenderBar("bar", mass: 2.0, length: 1.2);
+        var system = new PlanarSystem(
+            [bar],
+            PlanarSystem.StandardGravity,
+            [new PinJoint("pivot", Attachment.OnLink("bar", bar.EndA), Attachment.Ground(Vector2d.Zero))],
+            globalDamping: 0.8);
+        var state = system.CreateState();
+        system.SetBody(state.Values, 0, new Pose2d((-bar.EndA).Rotated(0.3), 0.3), default);
+
+        var manifest = RunRecorder.Record(system, state, new RunSettings(1e-4, 1_000, 100), Metadata with { TopologyName = "settling_bar" }, RunDir("run"));
+        var run = RunReader.Open(RunDir("run"));
+
+        Assert.Equal(0.8, run.Manifest.GlobalDamping);
+        Assert.Equal(0.8, run.Manifest.Topology.GlobalDamping);
+        Assert.Equal(0.8, TopologyMapping.FromDocument(run.Manifest.Topology).System.GlobalDamping);
+        Assert.True(manifest.Diagnostics.Energy.Dissipated[^1] > 0, "Global damping should dissipate energy.");
+    }
+
+    [Fact]
     public void RunsWithoutAGroundHaveNoContactChannels()
     {
         var manifest = RecordKickedX(RunDir("run"));
@@ -440,6 +461,8 @@ public sealed class RunRecorderTests : IDisposable
         Assert.Null(manifest.Topology.Ground);
         Assert.DoesNotContain(manifest.FrameLayout.Channels, c => c.StartsWith("contact.", StringComparison.Ordinal));
         Assert.DoesNotContain(FrameChannels.GroundHeight, manifest.FrameLayout.Channels);
+        Assert.Equal(0.0, manifest.GlobalDamping);
+        Assert.DoesNotContain("global_damping", RunFiles.SerializeTopology(manifest.Topology), StringComparison.Ordinal);
         var text = File.ReadAllText(Path.Combine(RunDir("run"), RunFiles.Manifest));
         Assert.DoesNotContain("\"contacts\"", text, StringComparison.Ordinal);
     }

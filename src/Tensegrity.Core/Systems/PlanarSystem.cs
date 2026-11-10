@@ -101,7 +101,8 @@ public sealed class PlanarSystem : ISwitchedSystem
         ConstraintStabilization? stabilization = null,
         IEnumerable<JointActuator>? actuators = null,
         GroundLine? ground = null,
-        IEnumerable<ExternalLoad>? loads = null)
+        IEnumerable<ExternalLoad>? loads = null,
+        double globalDamping = 0)
     {
         ArgumentNullException.ThrowIfNull(links);
         this.links = links.ToArray();
@@ -149,6 +150,13 @@ public sealed class PlanarSystem : ISwitchedSystem
         latchedNormals = new ContactMode[contacts.Length];
         latchedFrictions = new FrictionMode[contacts.Length];
 
+        if (!double.IsFinite(globalDamping) || globalDamping < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(globalDamping), globalDamping, "Must be finite and non-negative.");
+        }
+
+        GlobalDamping = globalDamping;
+
         this.loads = loads?.ToArray() ?? [];
         RequireUniqueIds(this.loads.Select(l => l.Id), "load", nameof(loads));
         loadPoints = this.loads.Select(l => Resolve(l.Attachment, $"load '{l.Id}'")).ToArray();
@@ -185,6 +193,15 @@ public sealed class PlanarSystem : ISwitchedSystem
     public int ContactCount => contacts.Length;
 
     public Vector2d Gravity { get; }
+
+    /// <summary>
+    /// Global settling damping γ, 1/s (PLAN.md 4.3): each body feels −γ·m·v
+    /// and −γ·I·ω, so a free body's speed decays as e^(−γt). Not a physical
+    /// element: for settling experiments only, zero in realistic runs, and
+    /// recorded in the run manifest. Its loss γ·Σ(m·v² + I·ω²) counts as
+    /// dissipated energy.
+    /// </summary>
+    public double GlobalDamping { get; }
 
     public ConstraintStabilization Stabilization { get; }
 
@@ -867,7 +884,7 @@ public sealed class PlanarSystem : ISwitchedSystem
     public double ElasticEnergy(ReadOnlySpan<double> state) =>
         CableElasticEnergy(state) + LimitElasticEnergy(state) + GroundElasticEnergy(state);
 
-    /// <summary>Energy dissipated by cable damping, joint-limit damping, joint friction and ground contact since the start of the run, J.</summary>
+    /// <summary>Energy dissipated by cable damping, joint-limit damping, joint friction, ground contact and global damping since the start of the run, J.</summary>
     public double DissipatedEnergy(ReadOnlySpan<double> state)
     {
         CheckLength(state.Length);
@@ -944,6 +961,14 @@ public sealed class PlanarSystem : ISwitchedSystem
             forces[i] = link.Mass * Gravity.X;
             forces[i + 1] = link.Mass * Gravity.Y;
             forces[i + 2] = 0.0;
+
+            if (GlobalDamping > 0)
+            {
+                var v = CoordinateCount + i;
+                forces[i] -= GlobalDamping * link.Mass * state[v];
+                forces[i + 1] -= GlobalDamping * link.Mass * state[v + 1];
+                forces[i + 2] -= GlobalDamping * link.MomentOfInertia * state[v + 2];
+            }
         }
 
         for (var c = 0; c < cables.Length; c++)
@@ -1318,11 +1343,12 @@ public sealed class PlanarSystem : ISwitchedSystem
     /// follow the same rule (<see cref="ContactLaw.DissipatedPowerInMode"/>),
     /// as does each ground contact's normal spring; its tangential damper
     /// and slider take <see cref="GroundLine.TangentialDissipatedPower"/>.
-    /// A pin with friction c takes c·Δω².
+    /// A pin with friction c takes c·Δω², and global damping γ takes
+    /// γ·Σ(m·v² + I·ω²) = 2γ·KE.
     /// </summary>
     private double DissipatedPower(double time, ReadOnlySpan<double> state)
     {
-        var total = 0.0;
+        var total = GlobalDamping > 0 ? 2 * GlobalDamping * KineticEnergy(state) : 0.0;
         for (var c = 0; c < cables.Length; c++)
         {
             var cable = cables[c];

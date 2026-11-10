@@ -24,6 +24,14 @@ public sealed class TopologyDocument
     /// <summary>Baumgarte natural frequency for pin constraints, rad/s; 0 turns it off.</summary>
     public double ConstraintStabilization { get; set; } = 50;
 
+    /// <summary>
+    /// Global settling damping γ, 1/s: each body feels −γ·m·v and −γ·I·ω.
+    /// For settling experiments only (PLAN.md 4.3); omitted from the file
+    /// when zero, as in every realistic run.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double GlobalDamping { get; set; }
+
     public List<LinkDocument> Links { get; set; } = [];
 
     public List<PinDocument> Pins { get; set; } = [];

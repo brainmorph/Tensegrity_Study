@@ -38,7 +38,8 @@ public static class TopologyMapping
             new ConstraintStabilization(document.ConstraintStabilization),
             actuators,
             ToGround(document.Ground, where),
-            (document.Loads ?? []).Select(l => ToLoad(l, where)));
+            (document.Loads ?? []).Select(l => ToLoad(l, where)),
+            document.GlobalDamping);
 
         var state = system.CreateState().Values;
         for (var b = 0; b < links.Length; b++)
@@ -87,6 +88,7 @@ public static class TopologyMapping
             Description = description,
             Gravity = [system.Gravity.X, system.Gravity.Y],
             ConstraintStabilization = system.Stabilization.Frequency,
+            GlobalDamping = system.GlobalDamping,
             Links = links,
             Pins = system.Pins.Select(p => new PinDocument
             {

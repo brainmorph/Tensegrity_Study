@@ -111,7 +111,7 @@ All quantities are `float64` (double) inside the core. Nothing is downcast until
 ### 4.3 Damping and energy
 
 - **Physical damping, not numerical**: cable viscous damping `c` (from a damping ratio per cable, default small). Joint friction is off by default and can be added as a per-joint parameter.
-- **Global damping** only for settling experiments, and it is off in realistic runs unless the topology file requests it. Its presence is recorded in the manifest.
+- **Global damping** only for settling experiments, and it is off in realistic runs unless the topology file requests it (`global_damping`, γ in 1/s). Each body feels `−γ·m·v` and `−γ·I·ω`, so a free body's speed decays as `e^(−γt)`, and the loss `γ·Σ(m·v² + I·ω²)` counts as dissipated energy. Its value is recorded in the manifest.
 - **Energy accounting every frame**: kinetic (translational + rotational), gravitational potential, elastic potential stored in cables, joint-limit stops and ground contact springs (normal and tangential), work done by actuators and external loads, and cumulative dissipated energy from cable damping, joint friction, joint-limit damping and ground contact (normal and tangential dampers, and the friction slider's `μ·N·|u|`). Energy balance is checked against the work from external inputs.
 
 ## 5. Solution architecture

@@ -60,7 +60,7 @@ public sealed class RunManifest
     /// </summary>
     public string? Ground { get; set; }
 
-    /// <summary>Global settling damping, 1/s; 0 in realistic runs (PLAN.md 4.3).</summary>
+    /// <summary>Global settling damping γ, 1/s, the same as <c>topology.global_damping</c>; 0 in realistic runs (PLAN.md 4.3).</summary>
     public double GlobalDamping { get; set; }
 
     /// <summary>
