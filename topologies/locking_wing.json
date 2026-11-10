@@ -1,0 +1,219 @@
+{
+  "format_version": 1,
+  "name": "locking_wing",
+  "description": "Three-link wing: upper 0.30 m / 0.20 kg pinned to the body at the shoulder, lower 0.35 m / 0.12 kg at the elbow, hand 0.25 m / 0.06 kg at the wrist, standard gravity, no muscle torque. Each joint is held straight out by one tendon (EA 1000 N, c 150 N s/m) from a point behind and above it; the elbow and wrist have fold stops at 150 degrees. At 0.1 s a downward gust of 0.2 N s over 20 ms (peak 20 N) hits the wingtip. The wrist bends to about 23 degrees, two thirds of the way to its fold; on the rebound the hand flicks up to about 52 degrees above straight with its tendon slack (the joints have no hyperextension stops). The lock holds and the wing rings back to straight out.",
+  "gravity": [
+    0,
+    -9.81
+  ],
+  "constraint_stabilization": 50,
+  "links": [
+    {
+      "id": "upper",
+      "role": "link",
+      "mass": 0.2,
+      "inertia": 0.0014999999999999998,
+      "length": 0.3,
+      "pose": {
+        "x": 0.15,
+        "y": 0,
+        "theta": 0
+      },
+      "twist": {
+        "vx": 0,
+        "vy": 0,
+        "omega": 0
+      }
+    },
+    {
+      "id": "lower",
+      "role": "link",
+      "mass": 0.12,
+      "inertia": 0.0012249999999999997,
+      "length": 0.35,
+      "pose": {
+        "x": 0.475,
+        "y": 0,
+        "theta": 0
+      },
+      "twist": {
+        "vx": 0,
+        "vy": 0,
+        "omega": 0
+      }
+    },
+    {
+      "id": "hand",
+      "role": "link",
+      "mass": 0.06,
+      "inertia": 0.0003125,
+      "length": 0.25,
+      "pose": {
+        "x": 0.7749999999999999,
+        "y": 0,
+        "theta": 0
+      },
+      "twist": {
+        "vx": 0,
+        "vy": 0,
+        "omega": 0
+      }
+    }
+  ],
+  "pins": [
+    {
+      "id": "shoulder",
+      "a": {
+        "link": "upper",
+        "point": [
+          -0.15,
+          0
+        ]
+      },
+      "b": {
+        "ground": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "id": "elbow",
+      "a": {
+        "link": "lower",
+        "point": [
+          -0.175,
+          0
+        ]
+      },
+      "b": {
+        "link": "upper",
+        "point": [
+          0.15,
+          0
+        ]
+      },
+      "limit": {
+        "lower": -2.6179938779914944,
+        "stiffness": 20,
+        "damping": 0.2
+      }
+    },
+    {
+      "id": "wrist",
+      "a": {
+        "link": "hand",
+        "point": [
+          -0.125,
+          0
+        ]
+      },
+      "b": {
+        "link": "lower",
+        "point": [
+          0.175,
+          0
+        ]
+      },
+      "limit": {
+        "lower": -2.6179938779914944,
+        "stiffness": 5,
+        "damping": 0.05
+      }
+    }
+  ],
+  "cables": [
+    {
+      "id": "shoulder_tendon",
+      "a": {
+        "ground": [
+          -0.03,
+          0.05
+        ]
+      },
+      "b": {
+        "link": "upper",
+        "point": [
+          -0.03,
+          0
+        ]
+      },
+      "rest_length": 0.152839112912577,
+      "axial_stiffness": 1000,
+      "damping": 150
+    },
+    {
+      "id": "elbow_tendon",
+      "a": {
+        "link": "upper",
+        "point": [
+          0.12,
+          0.04
+        ]
+      },
+      "b": {
+        "link": "lower",
+        "point": [
+          -0.07499999999999998,
+          0
+        ]
+      },
+      "rest_length": 0.13380530978118677,
+      "axial_stiffness": 1000,
+      "damping": 150
+    },
+    {
+      "id": "wrist_tendon",
+      "a": {
+        "link": "lower",
+        "point": [
+          0.145,
+          0.03
+        ]
+      },
+      "b": {
+        "link": "hand",
+        "point": [
+          -0.05499999999999999,
+          0
+        ]
+      },
+      "rest_length": 0.10402256760078628,
+      "axial_stiffness": 1000,
+      "damping": 150
+    }
+  ],
+  "loads": [
+    {
+      "id": "gust",
+      "link": "hand",
+      "point": [
+        0.125,
+        0
+      ],
+      "schedule": [
+        {
+          "time": 0.10037,
+          "fx": 0,
+          "fy": 0
+        },
+        {
+          "time": 0.11037,
+          "fx": 0,
+          "fy": -20
+        },
+        {
+          "time": 0.12037,
+          "fx": 0,
+          "fy": 0
+        }
+      ]
+    }
+  ],
+  "simulation": {
+    "dt": 0.0001,
+    "duration": 2,
+    "frame_stride": 100,
+    "event_tolerance": 1E-12
+  }
+}

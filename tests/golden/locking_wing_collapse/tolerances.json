@@ -1,0 +1,39 @@
+{
+  // Hand-written (PLAN.md 7a), as locking_wing. The collapse swings
+  // through large angles with tendon slack/taut events; the dt study's
+  // change on halving dt = 1e-4 s is 5.3e-13, so 1e-10 leaves room.
+  "time": { "absolute": 1e-12, "relative": 0 },
+  "upper_x": { "absolute": 1e-10, "relative": 0 },
+  "upper_y": { "absolute": 1e-10, "relative": 0 },
+  "upper_theta": { "absolute": 1e-10, "relative": 0 },
+  "lower_x": { "absolute": 1e-10, "relative": 0 },
+  "lower_y": { "absolute": 1e-10, "relative": 0 },
+  "lower_theta": { "absolute": 1e-10, "relative": 0 },
+  "hand_x": { "absolute": 1e-10, "relative": 0 },
+  "hand_y": { "absolute": 1e-10, "relative": 0 },
+  "hand_theta": { "absolute": 1e-10, "relative": 0 },
+  "tension_shoulder_tendon": { "absolute": 1e-6, "relative": 1e-9 },
+  "tension_elbow_tendon": { "absolute": 1e-6, "relative": 1e-9 },
+  "tension_wrist_tendon": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_shoulder_x": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_shoulder_y": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_elbow_x": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_elbow_y": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_wrist_x": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_wrist_y": { "absolute": 1e-6, "relative": 1e-9 },
+  "kinetic_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "potential_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "elastic_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "dissipated_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  // Worst |E_total(t) - E_total(0)|, J. Measured 1.0e-13 over 2 s.
+  "max_energy_balance_error": { "absolute": 5e-12, "relative": 0 },
+  "max_pin_residual": { "absolute": 1e-13, "relative": 0 },
+  // The wrist's angle range (rad) and stop torque (N m) over every step:
+  // the hand folds to about -147 degrees and misses the stop at 150.
+  "min_joint_angle_wrist": { "absolute": 1e-10, "relative": 0 },
+  "max_joint_angle_wrist": { "absolute": 1e-10, "relative": 0 },
+  "max_limit_torque_wrist": { "absolute": 1e-8, "relative": 1e-9 },
+  // Tendon slack/taut switches. A change here means the collapse changed.
+  "event_count": { "absolute": 0, "relative": 0 },
+  "unresolved_steps": { "absolute": 0, "relative": 0 }
+}

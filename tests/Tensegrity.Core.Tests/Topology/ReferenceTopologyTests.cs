@@ -83,6 +83,18 @@ public sealed class ReferenceTopologyTests : IDisposable
                 return (model.System, model.InitialState.ToArray());
             }
 
+            case "locking_wing":
+            {
+                var model = Wing.Gusted();
+                return (model.System, model.InitialState.ToArray());
+            }
+
+            case "locking_wing_collapse":
+            {
+                var model = Wing.Collapsing();
+                return (model.System, model.InitialState.ToArray());
+            }
+
             default:
                 throw new ArgumentException(name);
         }

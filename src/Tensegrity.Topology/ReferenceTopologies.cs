@@ -38,8 +38,15 @@ public static class ReferenceTopologies
     public const double ArmKickRate = -2.0;
     public const double ArmCollapseScale = 1.10;
 
+    // Locking wing parameters (PLAN.md M6): the LockingWingGeometry defaults, plus these.
+    public const double WingGustImpulse = 0.2;
+    // Off the step grid, so the gust's breakpoints split steps at every dt.
+    public const double WingGustStart = 0.10037;
+    public const double WingGustDuration = 0.02;
+    public const double WingCollapseScale = 1.08;
+
     public static IReadOnlyList<string> Names { get; } =
-        ["pendulum", "cable_oscillator", "planar_x", "planar_x_rest", "planar_x_free", "locking_arm", "locking_arm_collapse", "ground_drop", "perturbed_bar"];
+        ["pendulum", "cable_oscillator", "planar_x", "planar_x_rest", "planar_x_free", "locking_arm", "locking_arm_collapse", "ground_drop", "perturbed_bar", "locking_wing", "locking_wing_collapse"];
 
     public static PlanarModel Create(string name) => name switch
     {
@@ -52,6 +59,8 @@ public static class ReferenceTopologies
         "locking_arm_collapse" => LockingArmCollapse(),
         "ground_drop" => GroundDrop(),
         "perturbed_bar" => PerturbedBarCase(),
+        "locking_wing" => LockingWingGust(),
+        "locking_wing_collapse" => LockingWingCollapse(),
         _ => throw new ArgumentException($"Unknown reference topology '{name}'. Known: {string.Join(", ", Names)}.", nameof(name)),
     };
 
@@ -168,6 +177,23 @@ public static class ReferenceTopologies
         PerturbedBar.Create().With(
             name: "perturbed_bar",
             description: "The ground_drop bar (1 m, 1 kg, same ground) lying at rest on the ground line. At 0.1 s the ground falls 0.1 m in 10 ms, faster than the bar can follow; the bar falls after it and lands. At 0.5 s a 5 ms triangular pulse of (0.3, 0.6) N s at the right end knocks it up and sideways; it rocks, lands and settles flat by about 0.8 s.",
+            simulation: DefaultSimulation());
+
+    private const string WingSummary =
+        "Three-link wing: upper 0.30 m / 0.20 kg pinned to the body at the shoulder, lower 0.35 m / 0.12 kg at the elbow, hand 0.25 m / 0.06 kg at the wrist, standard gravity, no muscle torque. Each joint is held straight out by one tendon (EA 1000 N, c 150 N s/m) from a point behind and above it; the elbow and wrist have fold stops at 150 degrees";
+
+    /// <summary>The locking wing held straight out, hit by a downward gust at the wingtip.</summary>
+    public static PlanarModel LockingWingGust() =>
+        LockingWing.Create(loads: [LockingWing.WingtipGust(WingGustImpulse, WingGustStart, WingGustDuration)]).With(
+            name: "locking_wing",
+            description: WingSummary + ". At 0.1 s a downward gust of 0.2 N s over 20 ms (peak 20 N) hits the wingtip. The wrist bends to about 23 degrees, two thirds of the way to its fold; on the rebound the hand flicks up to about 52 degrees above straight with its tendon slack (the joints have no hyperextension stops). The lock holds and the wing rings back to straight out.",
+            simulation: DefaultSimulation());
+
+    /// <summary>The locking wing with its wrist tendon lengthened past the lock threshold, released from straight out.</summary>
+    public static PlanarModel LockingWingCollapse() =>
+        LockingWing.Create(restLengthScales: [1, 1, WingCollapseScale]).With(
+            name: "locking_wing_collapse",
+            description: WingSummary + ", except the wrist tendon is 8% longer than the lock needs, past its threshold of about 6.3%. Released at rest from straight out, the hand collapses and swings, hanging from the wrist.",
             simulation: DefaultSimulation());
 
     /// <summary>The free-floating X with no gravity, after opposite twists on its struts (zero total momentum).</summary>

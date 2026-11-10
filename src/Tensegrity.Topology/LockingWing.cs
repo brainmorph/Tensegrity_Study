@@ -70,19 +70,35 @@ public static class LockingWing
     public const string ElbowTendon = LockingArm.ElbowTendon;
     public const string WristTendon = "wrist_tendon";
 
+    /// <summary>Id of the wingtip gust in the reference case.</summary>
+    public const string Gust = "gust";
+
+    /// <summary>
+    /// A downward gust at the wingtip: a triangular force pulse of
+    /// <paramref name="impulse"/> N·s starting at <paramref name="start"/>
+    /// and lasting <paramref name="duration"/>, at the hand's outer end.
+    /// </summary>
+    public static ExternalLoad WingtipGust(double impulse, double start, double duration, LockingWingGeometry? geometry = null)
+    {
+        var w = geometry ?? new LockingWingGeometry();
+        return ExternalLoad.Pulse(Gust, Hand, new Vector2d(w.HandLength / 2, 0), new Vector2d(0, -impulse), start, duration);
+    }
+
     /// <summary>
     /// The wing at rest with its links at world angles
     /// <paramref name="angles"/> (upper, lower, hand; 0 is straight out
     /// along +x, all zero if omitted). The tendons are tensioned to hold
     /// that pose, then their rest lengths are multiplied by
     /// <paramref name="restLengthScales"/> (shoulder, elbow, wrist; 1 keeps
-    /// the exact equilibrium, more than 1 lengthens a tendon).
+    /// the exact equilibrium, more than 1 lengthens a tendon). Optional
+    /// <paramref name="loads"/> perturb it, such as a gust at the wingtip.
     /// </summary>
     public static PlanarModel Create(
         LockingWingGeometry? geometry = null,
         IReadOnlyList<double>? angles = null,
         IReadOnlyList<double>? restLengthScales = null,
-        Vector2d? gravity = null)
+        Vector2d? gravity = null,
+        IEnumerable<ExternalLoad>? loads = null)
     {
         var w = geometry ?? new LockingWingGeometry();
         var g = w.ArmGeometry;
@@ -173,7 +189,7 @@ public static class LockingWing
             new(Wrist, Attachment.OnLink(Hand, hand.EndA), Attachment.OnLink(Lower, lower.EndB), limit: Fold(w.WristFoldStop, w.WristStopStiffness, w.WristStopDamping)),
         ];
 
-        var system = new PlanarSystem([upper, lower, hand], grav, pins, cables);
+        var system = new PlanarSystem([upper, lower, hand], grav, pins, cables, loads: loads);
         var state = system.CreateState().Values;
         system.SetBody(state, 0, upperPose, default);
         system.SetBody(state, 1, lowerPose, default);
