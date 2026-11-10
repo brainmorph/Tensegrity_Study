@@ -149,6 +149,9 @@ public static class FrameChannels
 
     public static string LoadY(string load) => $"load.{load}.y";
 
+    /// <summary>Height of the ground line at that frame, m; present whenever the run has a ground.</summary>
+    public const string GroundHeight = "ground.height";
+
     /// <summary>Normal force the ground exerts on a contact point, N (upward, never negative).</summary>
     public static string ContactNormal(string contact) => $"contact.{contact}.normal";
 

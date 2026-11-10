@@ -9,14 +9,17 @@ namespace Tensegrity.Core.Systems;
 /// A set of planar rigid links under uniform gravity, joined by pin
 /// constraints and cables, in maximal coordinates.
 ///
-/// State layout for n bodies and m ground contact points (length
-/// 6n + 3 + m), positions first, then velocities, then the energy
-/// dissipated so far, the work done by the joint actuators so far and the
-/// work done by external loads so far, then each contact point's tangential
-/// spring extension (see <see cref="GroundLine"/>):
+/// State layout for n bodies and m ground contact points, positions first,
+/// then velocities, then the energy dissipated so far, the work done by the
+/// joint actuators so far and the work done by external loads and a moving
+/// ground so far; then, with a ground line only, its height h and each
+/// contact point's tangential spring extension (see <see cref="GroundLine"/>):
 /// <code>
-/// [ x0 y0 θ0  x1 y1 θ1 … | ẋ0 ẏ0 θ̇0  ẋ1 ẏ1 θ̇1 … | E_diss  W_act  W_ext | z0 z1 … ]
+/// [ x0 y0 θ0  x1 y1 θ1 … | ẋ0 ẏ0 θ̇0  ẋ1 ẏ1 θ̇1 … | E_diss  W_act  W_ext | h | z0 z1 … ]
 /// </code>
+/// The ground height is integrated from its schedule's slope, so it is
+/// exact, and every energy and contact quantity is a function of the state
+/// alone, even under a moving ground.
 /// Splitting positions from velocities keeps the generalized-coordinate block
 /// contiguous for the constraint solver. E_diss, W_act and W_ext are
 /// integrated with the rest of the state, so the energy balance (PLAN.md 4.3)
@@ -81,6 +84,7 @@ public sealed class PlanarSystem : ISwitchedSystem
     private readonly ExternalLoad[] loads;
     private readonly ResolvedPoint[] loadPoints;
     private readonly int[] latchedLoadSegments;
+    private int latchedGroundSegment;
     private bool modesLatched;
 
     // Scratch for the constraint solve, sized once.
@@ -192,7 +196,7 @@ public sealed class PlanarSystem : ISwitchedSystem
     /// <summary>Number of generalized coordinates: 3 per body.</summary>
     public int CoordinateCount => DofPerBody * links.Length;
 
-    /// <summary>Length of the state vector: coordinates, velocities, dissipated energy, actuator work, external work and contact extensions.</summary>
+    /// <summary>Length of the state vector: coordinates, velocities, dissipated energy, actuator work, external work, then ground height and contact extensions if there is a ground.</summary>
     public int StateLength => ExtensionBase + contacts.Length;
 
     /// <summary>Index of the cumulative dissipated energy in the state vector.</summary>
@@ -207,13 +211,36 @@ public sealed class PlanarSystem : ISwitchedSystem
     /// <summary>Index of contact point <paramref name="contact"/>'s tangential spring extension z in the state vector.</summary>
     public int ExtensionIndex(int contact) => ExtensionBase + CheckContact(contact);
 
-    private int ExtensionBase => (2 * CoordinateCount) + 3;
+    /// <summary>Index of the ground line's height h in the state vector.</summary>
+    /// <exception cref="InvalidOperationException">The system has no ground line.</exception>
+    public int GroundHeightIndex => ground is not null
+        ? (2 * CoordinateCount) + 3
+        : throw new InvalidOperationException("The system has no ground line.");
+
+    private int ExtensionBase => (2 * CoordinateCount) + 3 + (ground is null ? 0 : 1);
 
     public int PositionIndex(int body) => DofPerBody * CheckBody(body);
 
     public int VelocityIndex(int body) => CoordinateCount + (DofPerBody * CheckBody(body));
 
-    public SystemState CreateState(double time = 0) => new(StateLength, time);
+    /// <summary>A zero state at <paramref name="time"/>, with the ground (if any) at its scheduled height.</summary>
+    public SystemState CreateState(double time = 0)
+    {
+        var state = new SystemState(StateLength, time);
+        if (ground is not null)
+        {
+            state.Values[GroundHeightIndex] = ground.HeightSchedule.ValueAt(time);
+        }
+
+        return state;
+    }
+
+    /// <summary>Height of the ground line at this state, m.</summary>
+    public double GetGroundHeight(ReadOnlySpan<double> state)
+    {
+        CheckLength(state.Length);
+        return state[GroundHeightIndex];
+    }
 
     public Pose2d GetPose(ReadOnlySpan<double> state, int body)
     {
@@ -274,13 +301,18 @@ public sealed class PlanarSystem : ISwitchedSystem
             derivative[n + i + 2] = forces[i + 2] / link.MomentOfInertia;
         }
 
-        derivative[DissipatedEnergyIndex] = DissipatedPower(state);
+        derivative[DissipatedEnergyIndex] = DissipatedPower(time, state);
         derivative[ActuatorWorkIndex] = ActuatorPower(time, state, useLatchedModes: true);
         derivative[ExternalWorkIndex] = ExternalPower(time, state, useLatchedModes: true);
 
+        if (ground is not null)
+        {
+            derivative[GroundHeightIndex] = GroundRate(time, useLatchedModes: true);
+        }
+
         for (var i = 0; i < contacts.Length; i++)
         {
-            var c = ContactAt(state, i, useLatchedModes: true);
+            var c = ContactAt(time, state, i, useLatchedModes: true);
             derivative[ExtensionIndex(i)] = ground!.ExtensionRate(c.Friction, c.NormalForce, c.Extension, c.Velocity.X);
         }
     }
@@ -361,7 +393,7 @@ public sealed class PlanarSystem : ISwitchedSystem
 
         for (var i = 0; i < contacts.Length; i++)
         {
-            AddToHalf(halfForce, contacts[i], ContactAt(state, i, useLatchedModes: false).Force);
+            AddToHalf(halfForce, contacts[i], ContactAt(time, state, i, useLatchedModes: false).Force);
         }
 
         for (var l = 0; l < loads.Length; l++)
@@ -544,9 +576,14 @@ public sealed class PlanarSystem : ISwitchedSystem
             (latchedLowerStops[p], latchedUpperStops[p]) = LimitModesAt(state, p);
         }
 
+        if (ground is not null)
+        {
+            latchedGroundSegment = ground.HeightSchedule.SegmentAt(time);
+        }
+
         for (var i = 0; i < contacts.Length; i++)
         {
-            var c = ContactAt(state, i, useLatchedModes: false);
+            var c = ContactAt(time, state, i, useLatchedModes: false);
             latchedNormals[i] = c.Normal;
             latchedFrictions[i] = c.Friction;
         }
@@ -590,9 +627,14 @@ public sealed class PlanarSystem : ISwitchedSystem
             }
         }
 
+        if (ground is not null && ground.HeightSchedule.SegmentAt(time) != latchedGroundSegment)
+        {
+            return false;
+        }
+
         for (var i = 0; i < contacts.Length; i++)
         {
-            var c = ContactAt(state, i, useLatchedModes: false);
+            var c = ContactAt(time, state, i, useLatchedModes: false);
             if (c.Normal != latchedNormals[i] || c.Friction != latchedFrictions[i])
             {
                 return false;
@@ -709,7 +751,7 @@ public sealed class PlanarSystem : ISwitchedSystem
     /// Physical force the ground exerts on each contact point at this state,
     /// N: friction along x, the normal force along y.
     /// </summary>
-    public void GetContactForces(ReadOnlySpan<double> state, Span<Vector2d> forces)
+    public void GetContactForces(double time, ReadOnlySpan<double> state, Span<Vector2d> forces)
     {
         CheckLength(state.Length);
         if (forces.Length != contacts.Length)
@@ -719,16 +761,16 @@ public sealed class PlanarSystem : ISwitchedSystem
 
         for (var i = 0; i < contacts.Length; i++)
         {
-            forces[i] = ContactAt(state, i, useLatchedModes: false).Force;
+            forces[i] = ContactAt(time, state, i, useLatchedModes: false).Force;
         }
     }
 
     /// <summary>Physical normal and tangential modes of contact point <paramref name="contact"/> at this state.</summary>
-    public (ContactMode Normal, FrictionMode Friction) GetContactModes(ReadOnlySpan<double> state, int contact)
+    public (ContactMode Normal, FrictionMode Friction) GetContactModes(double time, ReadOnlySpan<double> state, int contact)
     {
         CheckLength(state.Length);
         CheckContact(contact);
-        var c = ContactAt(state, contact, useLatchedModes: false);
+        var c = ContactAt(time, state, contact, useLatchedModes: false);
         return (c.Normal, c.Friction);
     }
 
@@ -814,7 +856,7 @@ public sealed class PlanarSystem : ISwitchedSystem
         var total = 0.0;
         for (var i = 0; i < contacts.Length; i++)
         {
-            total += ground!.Normal.ElasticEnergy(ground.Penetration(WorldPoint(state, contacts[i]).Y))
+            total += ground!.Normal.ElasticEnergy(GroundLine.Penetration(state[GroundHeightIndex], WorldPoint(state, contacts[i]).Y))
                 + ground.TangentialElasticEnergy(state[ExtensionIndex(i)]);
         }
 
@@ -953,7 +995,7 @@ public sealed class PlanarSystem : ISwitchedSystem
 
         for (var i = 0; i < contacts.Length; i++)
         {
-            AddPointForce(state, contacts[i], ContactAt(state, i, useLatchedModes).Force);
+            AddPointForce(state, contacts[i], ContactAt(time, state, i, useLatchedModes).Force);
         }
 
         if (pins.Length > 0)
@@ -965,17 +1007,18 @@ public sealed class PlanarSystem : ISwitchedSystem
     /// <summary>
     /// Everything about contact point <paramref name="contact"/> at this
     /// state: its velocity and extension, its normal and tangential modes
-    /// (latched or physical), and the force the ground exerts on it.
+    /// (latched or physical), and the force the ground exerts on it. The
+    /// penetration rate is δ̇ = ḣ − ẏ, with ḣ from the height schedule.
     /// </summary>
-    private ContactState ContactAt(ReadOnlySpan<double> state, int contact, bool useLatchedModes)
+    private ContactState ContactAt(double time, ReadOnlySpan<double> state, int contact, bool useLatchedModes)
     {
         var g = ground!;
         var point = contacts[contact];
         var position = WorldPoint(state, point);
         var velocity = PointVelocity(state, point);
         var extension = state[ExtensionBase + contact];
-        var penetration = g.Penetration(position.Y);
-        var rate = -velocity.Y;
+        var penetration = GroundLine.Penetration(state[GroundHeightIndex], position.Y);
+        var rate = g.IsMoving ? GroundRate(time, useLatchedModes) - velocity.Y : -velocity.Y;
 
         ContactMode normal;
         FrictionMode friction;
@@ -1197,7 +1240,10 @@ public sealed class PlanarSystem : ISwitchedSystem
             : l.ForceAt(time);
     }
 
-    /// <summary>Rate of work done by the external loads, Σ F·v at each load's point, W.</summary>
+    /// <summary>
+    /// Rate of work done by the external loads, Σ F·v at each load's point,
+    /// and by a moving ground, Σ N·ḣ over the contact points, W.
+    /// </summary>
     private double ExternalPower(double time, ReadOnlySpan<double> state, bool useLatchedModes)
     {
         var total = 0.0;
@@ -1206,8 +1252,21 @@ public sealed class PlanarSystem : ISwitchedSystem
             total += Vector2d.Dot(LoadForce(l, time, useLatchedModes), PointVelocity(state, loadPoints[l]));
         }
 
+        if (ground is { IsMoving: true })
+        {
+            var rate = GroundRate(time, useLatchedModes);
+            for (var i = 0; i < contacts.Length; i++)
+            {
+                total += ContactAt(time, state, i, useLatchedModes).NormalForce * rate;
+            }
+        }
+
         return total;
     }
+
+    /// <summary>Rate ḣ at which the ground line rises, m/s, from the latched or current schedule segment.</summary>
+    private double GroundRate(double time, bool useLatchedModes) =>
+        useLatchedModes ? ground!.HeightSchedule.SlopeInSegment(latchedGroundSegment) : ground!.HeightSchedule.SlopeAt(time);
 
     private double AngularRate(ReadOnlySpan<double> state, ResolvedPoint point) =>
         point.Body == Ground ? 0.0 : state[CoordinateCount + (DofPerBody * point.Body) + 2];
@@ -1261,7 +1320,7 @@ public sealed class PlanarSystem : ISwitchedSystem
     /// and slider take <see cref="GroundLine.TangentialDissipatedPower"/>.
     /// A pin with friction c takes c·Δω².
     /// </summary>
-    private double DissipatedPower(ReadOnlySpan<double> state)
+    private double DissipatedPower(double time, ReadOnlySpan<double> state)
     {
         var total = 0.0;
         for (var c = 0; c < cables.Length; c++)
@@ -1294,7 +1353,7 @@ public sealed class PlanarSystem : ISwitchedSystem
 
         for (var i = 0; i < contacts.Length; i++)
         {
-            var c = ContactAt(state, i, useLatchedModes: true);
+            var c = ContactAt(time, state, i, useLatchedModes: true);
             total += ground!.Normal.DissipatedPowerInMode(c.Normal, c.Penetration, c.PenetrationRate)
                 + ground.TangentialDissipatedPower(c.Friction, c.NormalForce, c.Extension, c.Velocity.X);
         }

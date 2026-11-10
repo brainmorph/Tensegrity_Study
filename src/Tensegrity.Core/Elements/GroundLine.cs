@@ -40,9 +40,12 @@ public sealed record ContactPoint
 }
 
 /// <summary>
-/// A horizontal ground line at y = <see cref="Height"/> with penalty contact
-/// and Coulomb friction (PLAN.md 4.1), acting on listed body-fixed
-/// <see cref="Points"/>.
+/// A horizontal ground line at y = h with penalty contact and Coulomb
+/// friction (PLAN.md 4.1), acting on listed body-fixed
+/// <see cref="Points"/>. The height h is fixed, or follows a
+/// <see cref="HeightSchedule"/> for a moving support such as a ground drop
+/// (PLAN.md M6). A moving ground does work N·ḣ on each point it pushes.
+/// 
 ///
 /// <b>Normal.</b> With penetration δ = h − y and δ̇ = −ẏ, the ground pushes
 /// up with N from <see cref="Normal"/>, a <see cref="ContactLaw"/>: never
@@ -76,7 +79,8 @@ public sealed class GroundLine
         double friction,
         double tangentialStiffness,
         double tangentialDamping,
-        double height = 0)
+        double height = 0,
+        Schedule? heightSchedule = null)
     {
         ArgumentNullException.ThrowIfNull(points);
         Points = points.ToArray();
@@ -96,6 +100,11 @@ public sealed class GroundLine
             throw new ArgumentOutOfRangeException(nameof(height), height, "Must be finite.");
         }
 
+        if (heightSchedule is not null && height != 0)
+        {
+            throw new ArgumentException("Give a fixed height or a height schedule, not both.", nameof(heightSchedule));
+        }
+
         if (!double.IsFinite(friction) || friction < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(friction), friction, "Must be finite and non-negative.");
@@ -113,7 +122,7 @@ public sealed class GroundLine
         }
 
         Normal = new ContactLaw(normalStiffness, normalDamping);
-        Height = height;
+        HeightSchedule = heightSchedule ?? Schedule.Constant(height);
         Friction = friction;
         TangentialStiffness = tangentialStiffness;
         TangentialDamping = tangentialDamping;
@@ -121,8 +130,14 @@ public sealed class GroundLine
 
     public IReadOnlyList<ContactPoint> Points { get; }
 
-    /// <summary>Height h of the line, m.</summary>
-    public double Height { get; }
+    /// <summary>Height h of the line over time, m; constant for a fixed ground.</summary>
+    public Schedule HeightSchedule { get; }
+
+    /// <summary>True if the line moves.</summary>
+    public bool IsMoving => !HeightSchedule.IsConstant;
+
+    /// <summary>Height of the line at t = 0, m.</summary>
+    public double Height => HeightSchedule.ValueAt(0);
 
     /// <summary>Normal penalty law: k in N/m, c in N·s/m.</summary>
     public ContactLaw Normal { get; }
@@ -136,8 +151,8 @@ public sealed class GroundLine
     /// <summary>Tangential damper c_t, N·s/m.</summary>
     public double TangentialDamping { get; }
 
-    /// <summary>Penetration δ = h − y of a point at height y, m.</summary>
-    public double Penetration(double y) => Height - y;
+    /// <summary>Penetration δ = h − y of a point at height y below a line at height h, m.</summary>
+    public static double Penetration(double lineHeight, double y) => lineHeight - y;
 
     /// <summary>
     /// The tangential mode for a point with normal mode

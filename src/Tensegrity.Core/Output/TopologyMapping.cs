@@ -166,6 +166,17 @@ public static class TopologyMapping
 
         var points = (document.Contacts ?? []).Select(c =>
             new ContactPoint(c.Id, c.Link, ToVector(c.Point, $"{where} contact point '{c.Id}'"))).ToArray();
+        Schedule? schedule = null;
+        if (document.HeightSchedule is { } heights)
+        {
+            schedule = new Schedule(heights.Select(p => new SchedulePoint(p.Time, p.Height)));
+            if (schedule.ValueAt(0) != document.Height)
+            {
+                throw new FormatException(
+                    $"{where}: the ground's height {document.Height} m does not match its schedule's height at t = 0, {schedule.ValueAt(0)} m.");
+            }
+        }
+
         return new GroundLine(
             points,
             document.NormalStiffness,
@@ -173,7 +184,8 @@ public static class TopologyMapping
             document.Friction,
             document.TangentialStiffness,
             document.TangentialDamping,
-            document.Height);
+            schedule is null ? document.Height : 0,
+            schedule);
     }
 
     private static GroundDocument? ToDocument(GroundLine? ground) =>
@@ -182,6 +194,9 @@ public static class TopologyMapping
             : new GroundDocument
             {
                 Height = ground.Height,
+                HeightSchedule = ground.IsMoving
+                    ? ground.HeightSchedule.Points.Select(p => new HeightPointDocument { Time = p.Time, Height = p.Value }).ToList()
+                    : null,
                 NormalStiffness = ground.Normal.Stiffness,
                 NormalDamping = ground.Normal.Damping,
                 Friction = ground.Friction,

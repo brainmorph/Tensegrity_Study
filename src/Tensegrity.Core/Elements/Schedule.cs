@@ -76,6 +76,31 @@ public sealed class Schedule
         return k;
     }
 
+    /// <summary>A ramp from <paramref name="from"/> at <paramref name="start"/> to <paramref name="to"/> at <paramref name="end"/>, held before and after.</summary>
+    public static Schedule Ramp(double start, double from, double end, double to) =>
+        new([new SchedulePoint(start, from), new SchedulePoint(end, to)]);
+
+    /// <summary>Rate of change in segment <paramref name="segment"/>: zero before the first breakpoint and after the last.</summary>
+    public double SlopeInSegment(int segment)
+    {
+        if ((uint)segment >= (uint)SegmentCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(segment), segment, $"Schedule has {SegmentCount} segments.");
+        }
+
+        if (segment == 0 || segment == points.Length)
+        {
+            return 0.0;
+        }
+
+        var a = points[segment - 1];
+        var b = points[segment];
+        return (b.Value - a.Value) / (b.Time - a.Time);
+    }
+
+    /// <summary>Rate of change at <paramref name="time"/>; at a breakpoint, the rate just after it.</summary>
+    public double SlopeAt(double time) => SlopeInSegment(SegmentAt(time));
+
     /// <summary>Value at <paramref name="time"/>.</summary>
     public double ValueAt(double time) => ValueInSegment(SegmentAt(time), time);
 

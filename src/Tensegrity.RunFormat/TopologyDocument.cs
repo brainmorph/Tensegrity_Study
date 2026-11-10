@@ -163,8 +163,16 @@ public sealed class JointLimitDocument
 /// </summary>
 public sealed class GroundDocument
 {
-    /// <summary>Height of the line, m.</summary>
+    /// <summary>Height of the line, m; with a <see cref="HeightSchedule"/>, its height at t = 0.</summary>
     public double Height { get; set; }
+
+    /// <summary>
+    /// For a moving ground (such as a ground drop): the height over time,
+    /// piecewise-linear and held before the first point and after the last.
+    /// Null (omitted from the file) for a fixed ground.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<HeightPointDocument>? HeightSchedule { get; set; }
 
     /// <summary>Normal penalty stiffness, N/m.</summary>
     public double NormalStiffness { get; set; }
@@ -212,6 +220,15 @@ public sealed class LoadPointDocument
 
     /// <summary>World y component of the force, N.</summary>
     public double Fy { get; set; }
+}
+
+public sealed class HeightPointDocument
+{
+    /// <summary>Time, s.</summary>
+    public double Time { get; set; }
+
+    /// <summary>Height of the line, m.</summary>
+    public double Height { get; set; }
 }
 
 /// <summary>A body-fixed point that can touch the ground.</summary>

@@ -26,8 +26,8 @@ public class GroundLineTests
     [Fact]
     public void PenetrationIsMeasuredDownFromTheLine()
     {
-        Assert.Equal(0.05, Line.Penetration(0.2), 15);
-        Assert.Equal(-0.75, Line.Penetration(1.0), 15);
+        Assert.Equal(0.05, GroundLine.Penetration(Line.Height, 0.2), 15);
+        Assert.Equal(-0.75, GroundLine.Penetration(Line.Height, 1.0), 15);
     }
 
     [Fact]

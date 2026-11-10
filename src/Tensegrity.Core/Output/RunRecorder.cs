@@ -183,6 +183,11 @@ public static class RunRecorder
             channels.Add(FrameChannels.LoadY(load.Id));
         }
 
+        if (system.GroundLine is not null)
+        {
+            channels.Add(FrameChannels.GroundHeight);
+        }
+
         foreach (var contact in system.GroundLine?.Points ?? [])
         {
             channels.Add(FrameChannels.ContactNormal(contact.Id));
@@ -266,8 +271,13 @@ public static class RunRecorder
             Put(at.Y);
         }
 
+        if (system.GroundLine is not null)
+        {
+            Put(system.GetGroundHeight(y));
+        }
+
         var contactForces = new Vector2d[system.ContactCount];
-        system.GetContactForces(y, contactForces);
+        system.GetContactForces(state.Time, y, contactForces);
         for (var k = 0; k < contactForces.Length; k++)
         {
             var at = system.GetContactPoint(y, k);

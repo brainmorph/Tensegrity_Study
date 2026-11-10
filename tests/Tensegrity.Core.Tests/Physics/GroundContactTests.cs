@@ -61,10 +61,10 @@ public class GroundContactTests
         Assert.Equal(start.Position.X, pose.Position.X, 13);
         Assert.Equal(start.Position.Y, pose.Position.Y, 13);
         Assert.Equal(0.0, pose.Angle, 13);
-        Assert.Equal((ContactMode.Pressing, FrictionMode.Stick), system.GetContactModes(state.Values, 0));
+        Assert.Equal((ContactMode.Pressing, FrictionMode.Stick), system.GetContactModes(state.Time, state.Values, 0));
 
         var forces = new Vector2d[2];
-        system.GetContactForces(state.Values, forces);
+        system.GetContactForces(state.Time, state.Values, forces);
         Assert.Equal(Bar.Mass * G / 2, forces[0].Y, 10);
         Assert.Equal(0.0, forces[0].X, 10);
     }
@@ -81,14 +81,14 @@ public class GroundContactTests
 
         // Friction acts along the bar's axis, through its center: no torque, no change in load.
         FixedStepRunner.Run(state, stepper, 1e-4, 1_000);
-        Assert.Equal((ContactMode.Pressing, FrictionMode.SlipPositive), system.GetContactModes(state.Values, 1));
+        Assert.Equal((ContactMode.Pressing, FrictionMode.SlipPositive), system.GetContactModes(state.Time, state.Values, 1));
         Assert.Equal(v0 - (Mu * G * 0.1), system.GetTwist(state.Values, 0).Linear.X, 11);
         Assert.Equal(y0, system.GetPose(state.Values, 0).Position.Y, 13);
 
         FixedStepRunner.Run(state, stepper, 1e-4, 9_000);
 
         // It stops after v0²/(2μg), less the few tenths of a mm the tangential springs gave.
-        Assert.Equal(FrictionMode.Stick, system.GetContactModes(state.Values, 0).Friction);
+        Assert.Equal(FrictionMode.Stick, system.GetContactModes(state.Time, state.Values, 0).Friction);
         Assert.InRange(Math.Abs(system.GetTwist(state.Values, 0).Linear.X), 0.0, 1e-9);
         Assert.Equal(v0 * v0 / (2 * Mu * G), system.GetPose(state.Values, 0).Position.X, 3);
         Assert.Equal(0.5 * Bar.Mass * v0 * v0, system.DissipatedEnergy(state.Values), 6);
@@ -111,7 +111,7 @@ public class GroundContactTests
         // Each tangential spring holds half the downhill weight.
         Assert.Equal(Bar.Mass * G * Math.Sin(alpha) / (2 * Kt), state.Values[system.ExtensionIndex(0)], 12);
         Assert.Equal(settled, system.GetPose(state.Values, 0).Position.X, 14);
-        Assert.Equal((ContactMode.Pressing, FrictionMode.Stick), system.GetContactModes(state.Values, 1));
+        Assert.Equal((ContactMode.Pressing, FrictionMode.Stick), system.GetContactModes(state.Time, state.Values, 1));
     }
 
     [Fact]
@@ -128,7 +128,7 @@ public class GroundContactTests
         FixedStepRunner.Run(state, stepper, 1e-4, 5_000);
         var v2 = system.GetTwist(state.Values, 0).Linear.X;
 
-        Assert.Equal(FrictionMode.SlipPositive, system.GetContactModes(state.Values, 0).Friction);
+        Assert.Equal(FrictionMode.SlipPositive, system.GetContactModes(state.Time, state.Values, 0).Friction);
         Assert.Equal(G * (Math.Sin(alpha) - (Mu * Math.Cos(alpha))) * 0.5, v2 - v1, 10);
     }
 
@@ -157,7 +157,7 @@ public class GroundContactTests
         {
             for (var i = 0; i < system.ContactCount; i++)
             {
-                var (normal, friction) = system.GetContactModes(s.Values, i);
+                var (normal, friction) = system.GetContactModes(s.Time, s.Values, i);
                 normals.Add(normal);
                 frictions.Add(friction);
             }
@@ -217,7 +217,7 @@ public class GroundContactTests
 
         // The tangential springs relax at once; after that nothing slows the bar.
         Assert.Equal(0.7, system.GetTwist(state.Values, 0).Linear.X, 3);
-        Assert.Equal(FrictionMode.SlipPositive, system.GetContactModes(state.Values, 0).Friction);
+        Assert.Equal(FrictionMode.SlipPositive, system.GetContactModes(state.Time, state.Values, 0).Friction);
     }
 
     [Fact]
@@ -226,9 +226,11 @@ public class GroundContactTests
         var system = BarOnGround(PlanarSystem.StandardGravity);
 
         Assert.Equal(2, system.ContactCount);
-        Assert.Equal((6 * 1) + 3 + 2, system.StateLength);
-        Assert.Equal(9, system.ExtensionIndex(0));
-        Assert.Equal(10, system.ExtensionIndex(1));
+        Assert.Equal((6 * 1) + 3 + 1 + 2, system.StateLength);
+        Assert.Equal(9, system.GroundHeightIndex);
+        Assert.Equal(10, system.ExtensionIndex(0));
+        Assert.Equal(11, system.ExtensionIndex(1));
+        Assert.Equal(0.0, system.CreateState().Values[9]);
         Assert.Throws<ArgumentOutOfRangeException>(() => system.ExtensionIndex(2));
         Assert.Throws<ArgumentException>(() => new PlanarSystem(
             [Bar],

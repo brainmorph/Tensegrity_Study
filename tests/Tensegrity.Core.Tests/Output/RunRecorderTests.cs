@@ -394,6 +394,44 @@ public sealed class RunRecorderTests : IDisposable
     }
 
     [Fact]
+    public void MovingGroundRoundTripsAndIsRecordedAsAHeightChannel()
+    {
+        var bar = PlanarLink.SlenderBar("bar", mass: 1.0, length: 1.0);
+        var ground = new GroundLine(
+            [new ContactPoint("left", "bar", bar.EndA), new ContactPoint("right", "bar", bar.EndB)],
+            1e4, 60, 0.5, 1e4, 60,
+            heightSchedule: Schedule.Ramp(0.05, 0.1, 0.07, -0.05));
+        var system = new PlanarSystem([bar], PlanarSystem.StandardGravity, ground: ground);
+        var state = system.CreateState();
+        system.SetBody(state.Values, 0, new Pose2d(new Vector2d(0, 0.1 - 4.905e-4), 0), default);
+
+        var document = TopologyMapping.ToDocument(system, state.Values, "ground_drop_test");
+        Assert.Equal(0.1, document.Ground!.Height);
+        Assert.Equal([0.1, -0.05], document.Ground.HeightSchedule!.Select(p => p.Height));
+        var (rebuilt, rebuiltState) = TopologyMapping.FromDocument(
+            System.Text.Json.JsonSerializer.Deserialize<TopologyDocument>(RunFiles.SerializeTopology(document), RunFiles.Json)!);
+        Assert.Equal(RunFiles.SerializeTopology(document), RunFiles.SerializeTopology(TopologyMapping.ToDocument(rebuilt, rebuiltState, "ground_drop_test")));
+
+        var mismatched = TopologyMapping.ToDocument(system, state.Values, "x");
+        mismatched.Ground!.Height = 0.2;
+        Assert.Throws<FormatException>(() => TopologyMapping.FromDocument(mismatched));
+
+        var settings = new RunSettings(1e-4, 5_000, 50);
+        var manifest = RunRecorder.Record(system, state, settings, Metadata with { TopologyName = "ground_drop_test" }, RunDir("run"));
+        var run = RunReader.Open(RunDir("run"));
+
+        Assert.InRange(manifest.Diagnostics.MaxEnergyBalanceError, 0.0, 1e-8);
+        for (var f = 0; f < run.FrameCount; f++)
+        {
+            var t = f * settings.FrameStride * settings.Dt;
+            Assert.Equal((float)ground.HeightSchedule.ValueAt(t), run.Value(f, FrameChannels.GroundHeight), 1e-6f);
+        }
+
+        // The bar fell with the line and rests on it at its new height.
+        Assert.Equal(-0.05f - 4.905e-4f, run.Value(run.FrameCount - 1, FrameChannels.LinkY("bar")), 1e-5f);
+    }
+
+    [Fact]
     public void RunsWithoutAGroundHaveNoContactChannels()
     {
         var manifest = RecordKickedX(RunDir("run"));
@@ -401,6 +439,7 @@ public sealed class RunRecorderTests : IDisposable
         Assert.Null(manifest.Ground);
         Assert.Null(manifest.Topology.Ground);
         Assert.DoesNotContain(manifest.FrameLayout.Channels, c => c.StartsWith("contact.", StringComparison.Ordinal));
+        Assert.DoesNotContain(FrameChannels.GroundHeight, manifest.FrameLayout.Channels);
         var text = File.ReadAllText(Path.Combine(RunDir("run"), RunFiles.Manifest));
         Assert.DoesNotContain("\"contacts\"", text, StringComparison.Ordinal);
     }

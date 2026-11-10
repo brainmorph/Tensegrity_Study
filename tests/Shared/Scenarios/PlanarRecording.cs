@@ -1,3 +1,4 @@
+using Tensegrity.Core.Elements;
 using Tensegrity.Core.Integration;
 using Tensegrity.Core.Mathematics;
 using Tensegrity.Core.Systems;
@@ -51,7 +52,7 @@ internal static class PlanarRecording
             maxPinResidual = Math.Max(maxPinResidual, system.PinPositionResidual(s.Values));
             for (var i = 0; i < system.ContactCount; i++)
             {
-                maxPenetration = Math.Max(maxPenetration, system.GroundLine!.Penetration(system.GetContactPoint(s.Values, i).Y));
+                maxPenetration = Math.Max(maxPenetration, GroundLine.Penetration(system.GetGroundHeight(s.Values), system.GetContactPoint(s.Values, i).Y));
             }
 
             if (watched.Length > 0)
@@ -99,7 +100,7 @@ internal static class PlanarRecording
 
             if (contactForces.Length > 0)
             {
-                system.GetContactForces(s.Values, contactForces);
+                system.GetContactForces(s.Time, s.Values, contactForces);
                 for (var i = 0; i < contactForces.Length; i++)
                 {
                     var id = system.GroundLine!.Points[i].Id;
