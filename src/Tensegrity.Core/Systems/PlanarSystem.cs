@@ -9,11 +9,13 @@ namespace Tensegrity.Core.Systems;
 /// A set of planar rigid links under uniform gravity, joined by pin
 /// constraints and cables, in maximal coordinates.
 ///
-/// State layout for n bodies (length 6n + 2), positions first, then
-/// velocities, then the energy dissipated so far and the work done by the
-/// joint actuators so far:
+/// State layout for n bodies and m ground contact points (length
+/// 6n + 2 + m), positions first, then velocities, then the energy
+/// dissipated so far and the work done by the joint actuators so far, then
+/// each contact point's tangential spring extension (see
+/// <see cref="GroundLine"/>):
 /// <code>
-/// [ x0 y0 θ0  x1 y1 θ1 … | ẋ0 ẏ0 θ̇0  ẋ1 ẏ1 θ̇1 … | E_diss  W_act ]
+/// [ x0 y0 θ0  x1 y1 θ1 … | ẋ0 ẏ0 θ̇0  ẋ1 ẏ1 θ̇1 … | E_diss  W_act | z0 z1 … ]
 /// </code>
 /// Splitting positions from velocities keeps the generalized-coordinate block
 /// contiguous for the constraint solver. E_diss and W_act are integrated with
@@ -34,11 +36,13 @@ namespace Tensegrity.Core.Systems;
 ///
 /// Cables switch between slack, taut and recoiling (see <see cref="Cable"/>),
 /// joint-limit stops between clear, pressing and recoiling (see
-/// <see cref="JointLimit"/>), and actuator schedules between their linear
-/// segments (see <see cref="TorqueSchedule"/>). As an
-/// <see cref="ISwitchedSystem"/>, <see cref="Evaluate"/> uses each element's
-/// latched mode, so a system with cables, joint limits or non-constant
-/// schedules must be stepped by an <see cref="EventSplittingStepper"/> (or
+/// <see cref="JointLimit"/>), ground contacts between clear, pressing and
+/// recoiling and between stick and slip (see <see cref="GroundLine"/>), and
+/// actuator schedules between their linear segments (see
+/// <see cref="TorqueSchedule"/>). As an <see cref="ISwitchedSystem"/>,
+/// <see cref="Evaluate"/> uses each element's latched mode, so a system
+/// with cables, joint limits, a ground line or non-constant schedules must
+/// be stepped by an <see cref="EventSplittingStepper"/> (or
 /// have its modes latched by hand). Diagnostics such as
 /// <see cref="GetCableTensions"/>, <see cref="GetLimitTorques"/>,
 /// <see cref="GetActuatorTorques"/> and <see cref="GetPinReactions"/> always
@@ -70,6 +74,10 @@ public sealed class PlanarSystem : ISwitchedSystem
     private readonly JointActuator[] actuators;
     private readonly int[] actuatorPin;
     private readonly int[] latchedSegments;
+    private readonly GroundLine? ground;
+    private readonly ResolvedPoint[] contacts;
+    private readonly ContactMode[] latchedNormals;
+    private readonly FrictionMode[] latchedFrictions;
     private bool modesLatched;
 
     // Scratch for the constraint solve, sized once.
@@ -84,7 +92,8 @@ public sealed class PlanarSystem : ISwitchedSystem
         IEnumerable<PinJoint>? pins = null,
         IEnumerable<Cable>? cables = null,
         ConstraintStabilization? stabilization = null,
-        IEnumerable<JointActuator>? actuators = null)
+        IEnumerable<JointActuator>? actuators = null,
+        GroundLine? ground = null)
     {
         ArgumentNullException.ThrowIfNull(links);
         this.links = links.ToArray();
@@ -127,9 +136,15 @@ public sealed class PlanarSystem : ISwitchedSystem
 
         latchedSegments = new int[this.actuators.Length];
 
+        this.ground = ground;
+        contacts = ground?.Points.Select(p => Resolve(p.Attachment, $"contact point '{p.Id}'")).ToArray() ?? [];
+        latchedNormals = new ContactMode[contacts.Length];
+        latchedFrictions = new FrictionMode[contacts.Length];
+
         // With nothing that switches, the default latch is already correct.
         modesLatched = this.cables.Length == 0
             && this.pins.All(p => p.Limit is null)
+            && ground is null
             && this.actuators.All(a => a.Schedule.IsConstant);
 
         forces = new double[CoordinateCount];
@@ -146,6 +161,12 @@ public sealed class PlanarSystem : ISwitchedSystem
 
     public IReadOnlyList<JointActuator> Actuators => actuators;
 
+    /// <summary>The ground line, or null for none.</summary>
+    public GroundLine? GroundLine => ground;
+
+    /// <summary>Number of ground contact points.</summary>
+    public int ContactCount => contacts.Length;
+
     public Vector2d Gravity { get; }
 
     public ConstraintStabilization Stabilization { get; }
@@ -158,14 +179,17 @@ public sealed class PlanarSystem : ISwitchedSystem
     /// <summary>Number of generalized coordinates: 3 per body.</summary>
     public int CoordinateCount => DofPerBody * links.Length;
 
-    /// <summary>Length of the state vector: coordinates, velocities, dissipated energy and actuator work.</summary>
-    public int StateLength => (2 * CoordinateCount) + 2;
+    /// <summary>Length of the state vector: coordinates, velocities, dissipated energy, actuator work and contact extensions.</summary>
+    public int StateLength => (2 * CoordinateCount) + 2 + contacts.Length;
 
     /// <summary>Index of the cumulative dissipated energy in the state vector.</summary>
     public int DissipatedEnergyIndex => 2 * CoordinateCount;
 
     /// <summary>Index of the cumulative actuator work in the state vector.</summary>
     public int ActuatorWorkIndex => (2 * CoordinateCount) + 1;
+
+    /// <summary>Index of contact point <paramref name="contact"/>'s tangential spring extension z in the state vector.</summary>
+    public int ExtensionIndex(int contact) => (2 * CoordinateCount) + 2 + CheckContact(contact);
 
     public int PositionIndex(int body) => DofPerBody * CheckBody(body);
 
@@ -218,7 +242,7 @@ public sealed class PlanarSystem : ISwitchedSystem
         if (!modesLatched)
         {
             throw new InvalidOperationException(
-                "Modes are not latched. Step a system with cables, joint limits or scheduled actuators through an EventSplittingStepper, or call LatchModes first.");
+                "Modes are not latched. Step a system with cables, joint limits, a ground line or scheduled actuators through an EventSplittingStepper, or call LatchModes first.");
         }
 
         ComputeTotalForces(time, state, useLatchedModes: true);
@@ -234,6 +258,12 @@ public sealed class PlanarSystem : ISwitchedSystem
 
         derivative[DissipatedEnergyIndex] = DissipatedPower(state);
         derivative[ActuatorWorkIndex] = ActuatorPower(time, state, useLatchedModes: true);
+
+        for (var i = 0; i < contacts.Length; i++)
+        {
+            var c = ContactAt(state, i, useLatchedModes: true);
+            derivative[ExtensionIndex(i)] = ground!.ExtensionRate(c.Friction, c.NormalForce, c.Extension, c.Velocity.X);
+        }
     }
 
     /// <summary>
@@ -268,9 +298,11 @@ public sealed class PlanarSystem : ISwitchedSystem
     /// uniform bar, so the +x half has mass m/2 centered at local (ℓ/4, 0).
     /// Cable and pin forces count toward the +x half when their attachment
     /// has local x &gt; 0; a point exactly on the midpoint acts on neither.
-    /// Uses the physical cable law, joint-limit torques and actuator torques
-    /// at the given time and state. Limit and actuator torques are pure
-    /// couples, so they enter only through the link's acceleration.
+    /// Ground contact forces count like cable forces, by where the contact
+    /// point sits. Uses the physical cable law, ground contact law,
+    /// joint-limit torques and actuator torques at the given time and state.
+    /// Limit and actuator torques are pure couples, so they enter only
+    /// through the link's acceleration.
     /// </summary>
     public void GetMidpointCompressions(double time, ReadOnlySpan<double> state, Span<double> compressions)
     {
@@ -306,6 +338,11 @@ public sealed class PlanarSystem : ISwitchedSystem
             var force = new Vector2d(multipliers[2 * p], multipliers[(2 * p) + 1]);
             AddToHalf(halfForce, pinA[p], force);
             AddToHalf(halfForce, pinB[p], -force);
+        }
+
+        for (var i = 0; i < contacts.Length; i++)
+        {
+            AddToHalf(halfForce, contacts[i], ContactAt(state, i, useLatchedModes: false).Force);
         }
 
         for (var b = 0; b < links.Length; b++)
@@ -483,6 +520,13 @@ public sealed class PlanarSystem : ISwitchedSystem
             (latchedLowerStops[p], latchedUpperStops[p]) = LimitModesAt(state, p);
         }
 
+        for (var i = 0; i < contacts.Length; i++)
+        {
+            var c = ContactAt(state, i, useLatchedModes: false);
+            latchedNormals[i] = c.Normal;
+            latchedFrictions[i] = c.Friction;
+        }
+
         for (var a = 0; a < actuators.Length; a++)
         {
             latchedSegments[a] = actuators[a].Schedule.SegmentAt(time);
@@ -511,6 +555,15 @@ public sealed class PlanarSystem : ISwitchedSystem
         for (var p = 0; p < pins.Length; p++)
         {
             if (LimitModesAt(state, p) != (latchedLowerStops[p], latchedUpperStops[p]))
+            {
+                return false;
+            }
+        }
+
+        for (var i = 0; i < contacts.Length; i++)
+        {
+            var c = ContactAt(state, i, useLatchedModes: false);
+            if (c.Normal != latchedNormals[i] || c.Friction != latchedFrictions[i])
             {
                 return false;
             }
@@ -614,6 +667,40 @@ public sealed class PlanarSystem : ISwitchedSystem
         }
     }
 
+    /// <summary>
+    /// Physical force the ground exerts on each contact point at this state,
+    /// N: friction along x, the normal force along y.
+    /// </summary>
+    public void GetContactForces(ReadOnlySpan<double> state, Span<Vector2d> forces)
+    {
+        CheckLength(state.Length);
+        if (forces.Length != contacts.Length)
+        {
+            throw new ArgumentException($"Expected {contacts.Length} forces, got {forces.Length}.", nameof(forces));
+        }
+
+        for (var i = 0; i < contacts.Length; i++)
+        {
+            forces[i] = ContactAt(state, i, useLatchedModes: false).Force;
+        }
+    }
+
+    /// <summary>Physical normal and tangential modes of contact point <paramref name="contact"/> at this state.</summary>
+    public (ContactMode Normal, FrictionMode Friction) GetContactModes(ReadOnlySpan<double> state, int contact)
+    {
+        CheckLength(state.Length);
+        CheckContact(contact);
+        var c = ContactAt(state, contact, useLatchedModes: false);
+        return (c.Normal, c.Friction);
+    }
+
+    /// <summary>World position of contact point <paramref name="contact"/> at this state.</summary>
+    public Vector2d GetContactPoint(ReadOnlySpan<double> state, int contact)
+    {
+        CheckLength(state.Length);
+        return WorldPoint(state, contacts[CheckContact(contact)]);
+    }
+
     /// <summary>World position of an attachment at this state.</summary>
     public Vector2d WorldPoint(ReadOnlySpan<double> state, Attachment attachment) =>
         WorldPoint(state, Resolve(attachment, "attachment"));
@@ -678,11 +765,29 @@ public sealed class PlanarSystem : ISwitchedSystem
         return total;
     }
 
-    /// <summary>All stored elastic energy: cables plus joint-limit stops, J.</summary>
-    public double ElasticEnergy(ReadOnlySpan<double> state) =>
-        CableElasticEnergy(state) + LimitElasticEnergy(state);
+    /// <summary>
+    /// Elastic energy stored in the ground contacts, J: ½·k·δ² in the
+    /// normal springs of points below the line plus ½·k_t·z² in every
+    /// tangential spring.
+    /// </summary>
+    public double GroundElasticEnergy(ReadOnlySpan<double> state)
+    {
+        CheckLength(state.Length);
+        var total = 0.0;
+        for (var i = 0; i < contacts.Length; i++)
+        {
+            total += ground!.Normal.ElasticEnergy(ground.Penetration(WorldPoint(state, contacts[i]).Y))
+                + ground.TangentialElasticEnergy(state[ExtensionIndex(i)]);
+        }
 
-    /// <summary>Energy dissipated by cable damping, joint-limit damping and joint friction since the start of the run, J.</summary>
+        return total;
+    }
+
+    /// <summary>All stored elastic energy: cables, joint-limit stops and ground contacts, J.</summary>
+    public double ElasticEnergy(ReadOnlySpan<double> state) =>
+        CableElasticEnergy(state) + LimitElasticEnergy(state) + GroundElasticEnergy(state);
+
+    /// <summary>Energy dissipated by cable damping, joint-limit damping, joint friction and ground contact since the start of the run, J.</summary>
     public double DissipatedEnergy(ReadOnlySpan<double> state)
     {
         CheckLength(state.Length);
@@ -696,7 +801,7 @@ public sealed class PlanarSystem : ISwitchedSystem
         return state[ActuatorWorkIndex];
     }
 
-    /// <summary>Kinetic + gravitational + elastic (cables and joint limits) energy, J.</summary>
+    /// <summary>Kinetic + gravitational + elastic (cables, joint limits and ground) energy, J.</summary>
     public double MechanicalEnergy(ReadOnlySpan<double> state) =>
         KineticEnergy(state) + GravitationalPotentialEnergy(state) + ElasticEnergy(state);
 
@@ -782,10 +887,50 @@ public sealed class PlanarSystem : ISwitchedSystem
             }
         }
 
+        for (var i = 0; i < contacts.Length; i++)
+        {
+            AddPointForce(state, contacts[i], ContactAt(state, i, useLatchedModes).Force);
+        }
+
         if (pins.Length > 0)
         {
             AddConstraintForces(state);
         }
+    }
+
+    /// <summary>
+    /// Everything about contact point <paramref name="contact"/> at this
+    /// state: its velocity and extension, its normal and tangential modes
+    /// (latched or physical), and the force the ground exerts on it.
+    /// </summary>
+    private ContactState ContactAt(ReadOnlySpan<double> state, int contact, bool useLatchedModes)
+    {
+        var g = ground!;
+        var point = contacts[contact];
+        var position = WorldPoint(state, point);
+        var velocity = PointVelocity(state, point);
+        var extension = state[(2 * CoordinateCount) + 2 + contact];
+        var penetration = g.Penetration(position.Y);
+        var rate = -velocity.Y;
+
+        ContactMode normal;
+        FrictionMode friction;
+        double normalForce;
+        if (useLatchedModes)
+        {
+            normal = latchedNormals[contact];
+            friction = latchedFrictions[contact];
+            normalForce = g.Normal.ForceInMode(normal, penetration, rate);
+        }
+        else
+        {
+            normal = g.Normal.ModeAt(penetration, rate);
+            normalForce = g.Normal.ForceInMode(normal, penetration, rate);
+            friction = g.FrictionModeAt(normal, normalForce, extension, velocity.X);
+        }
+
+        var tangential = g.FrictionForce(friction, normalForce, extension, velocity.X);
+        return new ContactState(normal, friction, penetration, rate, normalForce, extension, velocity, new Vector2d(tangential, normalForce));
     }
 
     private void AddConstraintForces(ReadOnlySpan<double> state)
@@ -1027,7 +1172,9 @@ public sealed class PlanarSystem : ISwitchedSystem
     /// and its stored energy changes at k·Δ·L̇, so the damper takes
     /// (T − k·Δ)·L̇: c·L̇² when taut, −k·Δ·L̇ when recoiling (positive, since
     /// then L̇ &lt; −k·Δ/c &lt; 0), and nothing when slack. Joint-limit stops
-    /// follow the same rule (<see cref="ContactLaw.DissipatedPowerInMode"/>).
+    /// follow the same rule (<see cref="ContactLaw.DissipatedPowerInMode"/>),
+    /// as does each ground contact's normal spring; its tangential damper
+    /// and slider take <see cref="GroundLine.TangentialDissipatedPower"/>.
     /// A pin with friction c takes c·Δω².
     /// </summary>
     private double DissipatedPower(ReadOnlySpan<double> state)
@@ -1059,6 +1206,13 @@ public sealed class PlanarSystem : ISwitchedSystem
             {
                 total += limit.DissipatedPowerInModes(latchedLowerStops[p], latchedUpperStops[p], JointAngle(state, p), RelativeRate(state, p));
             }
+        }
+
+        for (var i = 0; i < contacts.Length; i++)
+        {
+            var c = ContactAt(state, i, useLatchedModes: true);
+            total += ground!.Normal.DissipatedPowerInMode(c.Normal, c.Penetration, c.PenetrationRate)
+                + ground.TangentialDissipatedPower(c.Friction, c.NormalForce, c.Extension, c.Velocity.X);
         }
 
         return total;
@@ -1142,6 +1296,16 @@ public sealed class PlanarSystem : ISwitchedSystem
         }
     }
 
+    private int CheckContact(int contact)
+    {
+        if ((uint)contact >= (uint)contacts.Length)
+        {
+            throw new ArgumentOutOfRangeException(nameof(contact), contact, $"System has {contacts.Length} contact points.");
+        }
+
+        return contact;
+    }
+
     private void CheckPin(int pin)
     {
         if ((uint)pin >= (uint)pins.Length)
@@ -1170,4 +1334,14 @@ public sealed class PlanarSystem : ISwitchedSystem
 
     /// <summary>An attachment with its link resolved to a body index (or <see cref="Ground"/>).</summary>
     private readonly record struct ResolvedPoint(int Body, Vector2d Local);
+
+    private readonly record struct ContactState(
+        ContactMode Normal,
+        FrictionMode Friction,
+        double Penetration,
+        double PenetrationRate,
+        double NormalForce,
+        double Extension,
+        Vector2d Velocity,
+        Vector2d Force);
 }

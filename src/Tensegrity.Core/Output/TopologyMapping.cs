@@ -36,7 +36,8 @@ public static class TopologyMapping
             pins,
             cables,
             new ConstraintStabilization(document.ConstraintStabilization),
-            actuators);
+            actuators,
+            ToGround(document.Ground, where));
 
         var state = system.CreateState().Values;
         for (var b = 0; b < links.Length; b++)
@@ -104,6 +105,7 @@ public static class TopologyMapping
                 Damping = c.Damping,
             }).ToList(),
             Actuators = system.Actuators.Count == 0 ? null : ActuatorDocuments(system),
+            Ground = ToDocument(system.GroundLine),
             Simulation = simulation,
         };
     }
@@ -132,6 +134,44 @@ public static class TopologyMapping
             document.Pin,
             new TorqueSchedule(document.Schedule.Select(p => new TorquePoint(p.Time, p.Torque))));
     }
+
+    private static GroundLine? ToGround(GroundDocument? document, string where)
+    {
+        if (document is null)
+        {
+            return null;
+        }
+
+        var points = (document.Contacts ?? []).Select(c =>
+            new ContactPoint(c.Id, c.Link, ToVector(c.Point, $"{where} contact point '{c.Id}'"))).ToArray();
+        return new GroundLine(
+            points,
+            document.NormalStiffness,
+            document.NormalDamping,
+            document.Friction,
+            document.TangentialStiffness,
+            document.TangentialDamping,
+            document.Height);
+    }
+
+    private static GroundDocument? ToDocument(GroundLine? ground) =>
+        ground is null
+            ? null
+            : new GroundDocument
+            {
+                Height = ground.Height,
+                NormalStiffness = ground.Normal.Stiffness,
+                NormalDamping = ground.Normal.Damping,
+                Friction = ground.Friction,
+                TangentialStiffness = ground.TangentialStiffness,
+                TangentialDamping = ground.TangentialDamping,
+                Contacts = ground.Points.Select(p => new ContactPointDocument
+                {
+                    Id = p.Id,
+                    Link = p.Attachment.LinkId!,
+                    Point = [p.Attachment.Point.X, p.Attachment.Point.Y],
+                }).ToList(),
+            };
 
     private static JointLimit? ToLimit(JointLimitDocument? document) =>
         document is null

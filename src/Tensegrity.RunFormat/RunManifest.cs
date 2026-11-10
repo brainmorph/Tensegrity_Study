@@ -54,7 +54,10 @@ public sealed class RunManifest
 
     public double[] Gravity { get; set; } = [0, 0];
 
-    /// <summary>Ground contact model; null while there is none (deferred to M6).</summary>
+    /// <summary>
+    /// Ground contact model, <see cref="GroundModels.PenaltyCoulomb"/>, with its
+    /// parameters in <c>topology.ground</c>; null when the run has no ground.
+    /// </summary>
     public string? Ground { get; set; }
 
     /// <summary>Global settling damping, 1/s; 0 in realistic runs (PLAN.md 4.3).</summary>
@@ -95,6 +98,12 @@ public sealed class FrameLayout
     public int FrameBytes => 4 * Channels.Count;
 }
 
+public static class GroundModels
+{
+    /// <summary>Penalty spring-damper normal; Coulomb friction via a tangential spring-damper in series with a slider.</summary>
+    public const string PenaltyCoulomb = "penalty_spring_damper_coulomb_slider";
+}
+
 /// <summary>Names of the per-frame channels.</summary>
 public static class FrameChannels
 {
@@ -130,6 +139,17 @@ public static class FrameChannels
     /// <summary>Torque a pin's joint limit applies to its end A, N·m (end B takes the opposite). Only pins with a limit have it.</summary>
     public static string PinLimitTorque(string pin) => $"pin.{pin}.limit_torque";
 
+    /// <summary>Normal force the ground exerts on a contact point, N (upward, never negative).</summary>
+    public static string ContactNormal(string contact) => $"contact.{contact}.normal";
+
+    /// <summary>Friction force the ground exerts on a contact point along +x, N.</summary>
+    public static string ContactFriction(string contact) => $"contact.{contact}.friction";
+
+    /// <summary>World position of a contact point, so renderers can draw it without geometry.</summary>
+    public static string ContactX(string contact) => $"contact.{contact}.x";
+
+    public static string ContactY(string contact) => $"contact.{contact}.y";
+
     /// <summary>Torque an actuator applies at that frame's time, N·m: +τ on its pin's end A.</summary>
     public static string ActuatorTorque(string actuator) => $"actuator.{actuator}.torque";
 }
@@ -148,7 +168,7 @@ public sealed class RunDiagnostics
     /// <summary>Worst pin velocity error over every step, m/s.</summary>
     public double MaxPinVelocityResidual { get; set; }
 
-    /// <summary>Steps split at a cable or joint-limit mode switch, or an actuator schedule breakpoint.</summary>
+    /// <summary>Steps split at a cable, joint-limit or ground contact mode switch, or an actuator schedule breakpoint.</summary>
     public long EventCount { get; set; }
 
     /// <summary>Steps that hit the per-step switch cap and finished unsplit.</summary>
@@ -175,10 +195,10 @@ public sealed class EnergySeries
 
     public List<double> Gravitational { get; set; } = [];
 
-    /// <summary>Energy stored in stretched cables and compressed joint-limit stops.</summary>
+    /// <summary>Energy stored in stretched cables, compressed joint-limit stops and ground contact springs.</summary>
     public List<double> Elastic { get; set; } = [];
 
-    /// <summary>Energy lost to cable damping, joint-limit damping and joint friction so far.</summary>
+    /// <summary>Energy lost to cable damping, joint-limit damping, joint friction and ground contact so far.</summary>
     public List<double> Dissipated { get; set; } = [];
 
     /// <summary>Work done by the joint actuators so far.</summary>

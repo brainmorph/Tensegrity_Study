@@ -297,6 +297,72 @@ public sealed class RunRecorderTests : IDisposable
     }
 
     [Fact]
+    public void GroundRoundTripsAndIsRecordedAsContactChannels()
+    {
+        var bar = PlanarLink.SlenderBar("bar", mass: 1.0, length: 1.0);
+        var ground = new GroundLine(
+            [new ContactPoint("left", "bar", bar.EndA), new ContactPoint("right", "bar", bar.EndB)],
+            normalStiffness: 1e4,
+            normalDamping: 60,
+            friction: 0.5,
+            tangentialStiffness: 1e4,
+            tangentialDamping: 60,
+            height: -0.1);
+        var system = new PlanarSystem([bar], PlanarSystem.StandardGravity, ground: ground);
+        var state = system.CreateState();
+        system.SetBody(state.Values, 0, new Pose2d(new Vector2d(0, 0.2), 0.3), new Twist2d(new Vector2d(0.8, 0), 0));
+
+        var document = TopologyMapping.ToDocument(system, state.Values, "dropped_bar");
+        Assert.Equal(-0.1, document.Ground!.Height);
+        Assert.Equal(["left", "right"], document.Ground.Contacts.Select(c => c.Id));
+        var (rebuilt, rebuiltState) = TopologyMapping.FromDocument(
+            System.Text.Json.JsonSerializer.Deserialize<TopologyDocument>(RunFiles.SerializeTopology(document), RunFiles.Json)!);
+        Assert.Equal(RunFiles.SerializeTopology(document), RunFiles.SerializeTopology(TopologyMapping.ToDocument(rebuilt, rebuiltState, "dropped_bar")));
+        Assert.Equal(system.StateLength, rebuiltState.Length);
+
+        var settings = new RunSettings(1e-4, 15_000, 100);
+        var manifest = RunRecorder.Record(system, state, settings, Metadata with { TopologyName = "dropped_bar" }, RunDir("run"));
+        var run = RunReader.Open(RunDir("run"));
+
+        Assert.Equal(GroundModels.PenaltyCoulomb, run.Manifest.Ground);
+        Assert.Contains(FrameChannels.ContactNormal("left"), manifest.FrameLayout.Channels);
+        Assert.Contains(FrameChannels.ContactFriction("right"), manifest.FrameLayout.Channels);
+        Assert.True(manifest.Diagnostics.EventCount >= 2, "The bar should land.");
+        Assert.InRange(manifest.Diagnostics.MaxEnergyBalanceError, 0.0, 1e-7);
+
+        // At rest on the line at the end: each end carries half the weight,
+        // at the line's height. The ends may hold equal and opposite friction
+        // locked in when the slide stopped (residual stress), each inside its
+        // cone, but with no net horizontal force.
+        var last = run.FrameCount - 1;
+        foreach (var id in new[] { "left", "right" })
+        {
+            Assert.Equal(4.905f, run.Value(last, FrameChannels.ContactNormal(id)), 1e-3f);
+            Assert.InRange(Math.Abs(run.Value(last, FrameChannels.ContactFriction(id))), 0f, 0.5f * 4.905f);
+            Assert.Equal(-0.1f, run.Value(last, FrameChannels.ContactY(id)), 1e-3f);
+        }
+
+        Assert.Equal(0f, run.Value(last, FrameChannels.ContactFriction("left")) + run.Value(last, FrameChannels.ContactFriction("right")), 1e-4f);
+
+        Assert.Equal(
+            run.Value(last, FrameChannels.LinkX("bar")) - 0.5f,
+            run.Value(last, FrameChannels.ContactX("left")),
+            1e-3f);
+    }
+
+    [Fact]
+    public void RunsWithoutAGroundHaveNoContactChannels()
+    {
+        var manifest = RecordKickedX(RunDir("run"));
+
+        Assert.Null(manifest.Ground);
+        Assert.Null(manifest.Topology.Ground);
+        Assert.DoesNotContain(manifest.FrameLayout.Channels, c => c.StartsWith("contact.", StringComparison.Ordinal));
+        var text = File.ReadAllText(Path.Combine(RunDir("run"), RunFiles.Manifest));
+        Assert.DoesNotContain("\"contacts\"", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RunsWithoutLimitsHaveNoLimitChannels()
     {
         var manifest = RecordKickedX(RunDir("run"));

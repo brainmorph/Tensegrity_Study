@@ -83,7 +83,10 @@ All quantities are `float64` (double) inside the core. Nothing is downcast until
   - Unilateral: a cable never pushes. Switches between slack, taut and recoiling are **events** (see 4.2).
   - Optional cable mass, lumped at its ends. Default: off.
 - **Gravity**: uniform `g = (0, −9.81)` m/s² applied to each body's center of mass.
-- **Ground line** at `y = 0`: contact via penalty spring-damper with Coulomb friction. Deferred to M6 unless a topology needs it earlier (see Section 9).
+- **Ground line** at `y = h` (default 0), acting on listed body-fixed contact points (`GroundLine`):
+  - **Normal:** the penalty spring-damper `ContactLaw` on the penetration `δ = h − y`, never pulling, with clear, pressing and recoiling modes.
+  - **Friction (exact Coulomb, stick and slip):** a tangential spring `k_t` and damper `c_t` in parallel, in series with a Coulomb slider of strength `μ·N`. Each contact point carries the spring's extension `z` as a state variable. The point **sticks** while `|k_t·z + c_t·v| ≤ μ·N` (friction `−(k_t·z + c_t·v)`, `ż = v`). Otherwise it **slips** in direction `σ`, with friction exactly `−σ·μ·N` and `ż = (σ·μ·N − k_t·z)/c_t`. Off the ground it is **free**: no friction, and `z` relaxes as `ż = −k_t·z/c_t`.
+  - The mode depends on the state alone, so stick and slip are ordinary events, the force is continuous at both switches, and `z` never jumps. A loaded point at rest sticks at a fixed `z` with no creep. Points that stop sliding can keep equal and opposite friction locked in (residual stress), each inside its cone.
 - **Prestress**: each cable's rest length `L0` is shorter than its geometric length in the initial configuration, so the structure is in self-equilibrium under gravity. The prestress magnitude is part of the topology file.
 
 **Limitations of rigid links:** they cannot buckle or bend, so the model covers the rigid-strut regime only. This is acceptable for the first study and should be stated in any result.
@@ -107,7 +110,7 @@ All quantities are `float64` (double) inside the core. Nothing is downcast until
 
 - **Physical damping, not numerical**: cable viscous damping `c` (from a damping ratio per cable, default small). Joint friction is off by default and can be added as a per-joint parameter.
 - **Global damping** only for settling experiments, and it is off in realistic runs unless the topology file requests it. Its presence is recorded in the manifest.
-- **Energy accounting every frame**: kinetic (translational + rotational), gravitational potential, elastic potential stored in cables, ground contact energy, work done by actuators, and cumulative dissipated energy from cable damping, joint friction, and contact. Energy balance is checked against the work from external inputs.
+- **Energy accounting every frame**: kinetic (translational + rotational), gravitational potential, elastic potential stored in cables, joint-limit stops and ground contact springs (normal and tangential), work done by actuators, and cumulative dissipated energy from cable damping, joint friction, joint-limit damping and ground contact (normal and tangential dampers, and the friction slider's `μ·N·|u|`). Energy balance is checked against the work from external inputs.
 
 ## 5. Solution architecture
 
@@ -145,7 +148,7 @@ Each run is a directory, e.g. `runs/2026-11-09_planar-x_seed42/`:
   - `gravity`, `ground` parameters, damping parameters, actuator schedule, RNG seed
   - `topology` — links (id, mass, inertia, attachment points in body frame, initial pose), pins (id, body/ground refs, local points), cables (id, endpoint refs, `L0`, `EA`, damping, prestress), actuators
   - `diagnostics` — energy series, constraint residual maximum, number of event splits, any compression-violation flags for links
-- `frames.bin` — little-endian `float32`, one frame after another, as named channels listed in the manifest (`frame_layout.channels`) so Godot can read it without guessing. Per frame: `time`; per link `x`, `y`, `θ`; per cable tension and both world endpoints; per pin the reaction force (useful for showing where effort goes) and its world position; per actuator its torque; per pin with a joint limit the limit torque on its end A. Endpoints and pin positions are recorded so the renderer places numbers and computes no geometry.
+- `frames.bin` — little-endian `float32`, one frame after another, as named channels listed in the manifest (`frame_layout.channels`) so Godot can read it without guessing. Per frame: `time`; per link `x`, `y`, `θ`; per cable tension and both world endpoints; per pin the reaction force (useful for showing where effort goes) and its world position; per actuator its torque; per pin with a joint limit the limit torque on its end A; per ground contact point the normal and friction forces on it and its world position. Endpoints and pin positions are recorded so the renderer places numbers and computes no geometry.
 
 Why this split: the manifest is small and inspectable; frames are large and binary. Godot's reader parses the JSON and reads floats from a `FileAccess`.
 

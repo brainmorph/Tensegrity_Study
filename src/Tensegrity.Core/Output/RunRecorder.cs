@@ -123,6 +123,7 @@ public static class RunRecorder
             FrameCount = frameCount,
             EventTolerance = settings.EventTolerance,
             Gravity = [system.Gravity.X, system.Gravity.Y],
+            Ground = system.GroundLine is null ? null : GroundModels.PenaltyCoulomb,
             Actuators = TopologyMapping.ActuatorDocuments(system),
             Seed = metadata.Seed,
             TopologySource = metadata.TopologySource,
@@ -171,6 +172,14 @@ public static class RunRecorder
         foreach (var pin in system.Pins.Where(p => p.Limit is not null))
         {
             channels.Add(FrameChannels.PinLimitTorque(pin.Id));
+        }
+
+        foreach (var contact in system.GroundLine?.Points ?? [])
+        {
+            channels.Add(FrameChannels.ContactNormal(contact.Id));
+            channels.Add(FrameChannels.ContactFriction(contact.Id));
+            channels.Add(FrameChannels.ContactX(contact.Id));
+            channels.Add(FrameChannels.ContactY(contact.Id));
         }
 
         return channels;
@@ -235,6 +244,17 @@ public static class RunRecorder
             {
                 Put(limitTorques[p]);
             }
+        }
+
+        var contactForces = new Vector2d[system.ContactCount];
+        system.GetContactForces(y, contactForces);
+        for (var k = 0; k < contactForces.Length; k++)
+        {
+            var at = system.GetContactPoint(y, k);
+            Put(contactForces[k].Y);
+            Put(contactForces[k].X);
+            Put(at.X);
+            Put(at.Y);
         }
     }
 

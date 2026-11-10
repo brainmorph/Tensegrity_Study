@@ -33,6 +33,10 @@ public sealed class TopologyDocument
     /// <summary>Joint actuators; null (omitted from the file) when there are none.</summary>
     public List<ActuatorDocument>? Actuators { get; set; }
 
+    /// <summary>The ground line; null (omitted from the file) when there is none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public GroundDocument? Ground { get; set; }
+
     /// <summary>Default run settings; command-line flags may override them.</summary>
     public SimulationDocument? Simulation { get; set; }
 }
@@ -146,6 +150,45 @@ public sealed class JointLimitDocument
 
     /// <summary>Torsional damping c, N·m·s/rad.</summary>
     public double Damping { get; set; }
+}
+
+/// <summary>
+/// A horizontal ground line at y = <see cref="Height"/>: penalty contact
+/// along the normal, and Coulomb friction through a tangential
+/// spring-damper in series with a slider, at each listed contact point.
+/// </summary>
+public sealed class GroundDocument
+{
+    /// <summary>Height of the line, m.</summary>
+    public double Height { get; set; }
+
+    /// <summary>Normal penalty stiffness, N/m.</summary>
+    public double NormalStiffness { get; set; }
+
+    /// <summary>Normal damping, N·s/m.</summary>
+    public double NormalDamping { get; set; }
+
+    /// <summary>Coulomb friction coefficient μ.</summary>
+    public double Friction { get; set; }
+
+    /// <summary>Tangential spring stiffness, N/m.</summary>
+    public double TangentialStiffness { get; set; }
+
+    /// <summary>Tangential damping, N·s/m; must be positive.</summary>
+    public double TangentialDamping { get; set; }
+
+    public List<ContactPointDocument> Contacts { get; set; } = [];
+}
+
+/// <summary>A body-fixed point that can touch the ground.</summary>
+public sealed class ContactPointDocument
+{
+    public string Id { get; set; } = string.Empty;
+
+    public string Link { get; set; } = string.Empty;
+
+    /// <summary>Body-frame point [x, y] on <see cref="Link"/>.</summary>
+    public double[] Point { get; set; } = [0, 0];
 }
 
 /// <summary>
