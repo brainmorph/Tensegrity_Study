@@ -85,8 +85,8 @@ public class HoldingTorqueTests
         var hold = probe.SolveHoldingTorques(0, probeState.Values, ["shoulder", "elbow"]);
         var (system, state) = Arm(0.4, 1.3,
         [
-            new JointActuator("shoulder_motor", "shoulder", TorqueSchedule.Constant(hold["shoulder"])),
-            new JointActuator("elbow_motor", "elbow", TorqueSchedule.Constant(hold["elbow"])),
+            new JointActuator("shoulder_motor", "shoulder", Schedule.Constant(hold["shoulder"])),
+            new JointActuator("elbow_motor", "elbow", Schedule.Constant(hold["elbow"])),
         ]);
 
         FixedStepRunner.Run(state, new Rk4Integrator(), system.Evaluate, 1e-3, 1000);

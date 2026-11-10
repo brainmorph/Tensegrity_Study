@@ -39,7 +39,7 @@ namespace Tensegrity.Core.Systems;
 /// <see cref="JointLimit"/>), ground contacts between clear, pressing and
 /// recoiling and between stick and slip (see <see cref="GroundLine"/>), and
 /// actuator schedules between their linear segments (see
-/// <see cref="TorqueSchedule"/>). As an <see cref="ISwitchedSystem"/>,
+/// <see cref="Schedule"/>). As an <see cref="ISwitchedSystem"/>,
 /// <see cref="Evaluate"/> uses each element's latched mode, so a system
 /// with cables, joint limits, a ground line or non-constant schedules must
 /// be stepped by an <see cref="EventSplittingStepper"/> (or
@@ -626,7 +626,7 @@ public sealed class PlanarSystem : ISwitchedSystem
 
         for (var a = 0; a < actuators.Length; a++)
         {
-            torques[a] = actuators[a].Schedule.TorqueAt(time);
+            torques[a] = actuators[a].Schedule.ValueAt(time);
         }
     }
 
@@ -1109,7 +1109,7 @@ public sealed class PlanarSystem : ISwitchedSystem
     private double ActuatorTorque(int actuator, double time, bool useLatchedModes)
     {
         var schedule = actuators[actuator].Schedule;
-        return useLatchedModes ? schedule.TorqueInSegment(latchedSegments[actuator], time) : schedule.TorqueAt(time);
+        return useLatchedModes ? schedule.ValueInSegment(latchedSegments[actuator], time) : schedule.ValueAt(time);
     }
 
     /// <summary>Rate of work done by the actuators, Σ τ·(ω_A − ω_B), W.</summary>

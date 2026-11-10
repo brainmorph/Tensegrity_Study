@@ -187,7 +187,7 @@ public sealed class RunRecorderTests : IDisposable
     {
         var bar = PlanarLink.SlenderBar("bar", 2.0, 1.2);
         var pin = new PinJoint("pivot", Attachment.OnLink("bar", bar.EndA), Attachment.Ground(Vector2d.Zero), friction: 0.15);
-        var schedule = new TorqueSchedule([new TorquePoint(0.0503, 0), new TorquePoint(0.1507, 30)]);
+        var schedule = new Schedule([new SchedulePoint(0.0503, 0), new SchedulePoint(0.1507, 30)]);
         var system = new PlanarSystem([bar], PlanarSystem.StandardGravity, [pin], actuators: [new JointActuator("motor", "pivot", schedule)]);
         var state = system.CreateState();
         system.SetBody(state.Values, 0, new Pose2d(new Vector2d(0, -0.6), -Math.PI / 2), default);
@@ -220,7 +220,7 @@ public sealed class RunRecorderTests : IDisposable
             var time = run.Value(f, FrameChannels.Time);
             var expected = f * settings.FrameStride * settings.Dt;
             Assert.Equal((float)expected, time, 1e-6f);
-            Assert.Equal((float)schedule.TorqueAt(expected), run.Value(f, FrameChannels.ActuatorTorque("motor")), 1e-5f);
+            Assert.Equal((float)schedule.ValueAt(expected), run.Value(f, FrameChannels.ActuatorTorque("motor")), 1e-5f);
         }
 
         var energy = run.Manifest.Diagnostics.Energy;

@@ -118,7 +118,7 @@ public static class TopologyMapping
         {
             Id = a.Id,
             Pin = a.PinId,
-            Schedule = a.Schedule.Points.Select(p => new TorquePointDocument { Time = p.Time, Torque = p.Torque }).ToList(),
+            Schedule = a.Schedule.Points.Select(p => new TorquePointDocument { Time = p.Time, Torque = p.Value }).ToList(),
         }).ToList();
     }
 
@@ -132,7 +132,7 @@ public static class TopologyMapping
         return new JointActuator(
             document.Id,
             document.Pin,
-            new TorqueSchedule(document.Schedule.Select(p => new TorquePoint(p.Time, p.Torque))));
+            new Schedule(document.Schedule.Select(p => new SchedulePoint(p.Time, p.Torque))));
     }
 
     private static GroundLine? ToGround(GroundDocument? document, string where)

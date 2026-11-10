@@ -2,7 +2,7 @@ namespace Tensegrity.Core.Elements;
 
 /// <summary>
 /// A joint actuator, the muscle stand-in of PLAN.md 4.1: a torque applied
-/// across a pin joint, following a <see cref="TorqueSchedule"/>.
+/// across a pin joint, following a <see cref="Schedule"/>.
 ///
 /// The torque τ acts on the pin's end <see cref="PinJoint.A"/> and −τ on end
 /// <see cref="PinJoint.B"/>, so a positive τ turns A counterclockwise
@@ -12,7 +12,7 @@ namespace Tensegrity.Core.Elements;
 /// </summary>
 public sealed class JointActuator
 {
-    public JointActuator(string id, string pinId, TorqueSchedule schedule)
+    public JointActuator(string id, string pinId, Schedule schedule)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
         ArgumentException.ThrowIfNullOrWhiteSpace(pinId);
@@ -27,5 +27,5 @@ public sealed class JointActuator
     /// <summary>The pin the torque acts across.</summary>
     public string PinId { get; }
 
-    public TorqueSchedule Schedule { get; }
+    public Schedule Schedule { get; }
 }

@@ -17,7 +17,7 @@ public class ActuatorTests
     private static readonly PlanarLink Lower = PlanarLink.SlenderBar("lower", mass: 0.6, length: 0.8);
 
     /// <summary>The bar pinned to the ground by its end A at the origin, driven at the pivot.</summary>
-    private static PlanarSystem PinnedBar(Vector2d gravity, TorqueSchedule schedule, IEnumerable<Cable>? cables = null) => new(
+    private static PlanarSystem PinnedBar(Vector2d gravity, Schedule schedule, IEnumerable<Cable>? cables = null) => new(
         [Bar],
         gravity,
         [new PinJoint("pivot", Attachment.OnLink("bar", Bar.EndA), Attachment.Ground(Vector2d.Zero))],
@@ -40,15 +40,15 @@ public class ActuatorTests
     /// <paramref name="inertia"/> driven from rest by <paramref name="schedule"/>
     /// alone: θ̈ = τ(t)/I, integrated segment by segment in closed form.
     /// </summary>
-    private static double DrivenAngle(TorqueSchedule schedule, double inertia, double t)
+    private static double DrivenAngle(Schedule schedule, double inertia, double t)
     {
         double theta = 0, omega = 0, now = 0;
         var cuts = schedule.Points.Select(p => p.Time).Where(c => c > 0 && c < t).Append(t);
         foreach (var cut in cuts)
         {
             var h = cut - now;
-            var torque = schedule.TorqueAt(now);
-            var slope = (schedule.TorqueAt(cut) - torque) / h;
+            var torque = schedule.ValueAt(now);
+            var slope = (schedule.ValueAt(cut) - torque) / h;
             theta += (omega * h) + (((torque * h * h / 2) + (slope * h * h * h / 6)) / inertia);
             omega += ((torque * h) + (slope * h * h / 2)) / inertia;
             now = cut;
@@ -61,7 +61,7 @@ public class ActuatorTests
     public void ConstantTorqueSpinsAPinnedBarAtTauOverPivotInertia()
     {
         const double tau = 0.7;
-        var system = PinnedBar(Vector2d.Zero, TorqueSchedule.Constant(tau));
+        var system = PinnedBar(Vector2d.Zero, Schedule.Constant(tau));
         var state = PinnedBarState(system, 0.3, 0.0);
 
         FixedStepRunner.Run(state, new Rk4Integrator(), system.Evaluate, 1e-3, 1000);
@@ -81,7 +81,7 @@ public class ActuatorTests
     {
         // At θ = 0 the center is at (ℓ/2, 0): gravity's moment about the pivot is −m·g·ℓ/2.
         var hold = Bar.Mass * 9.81 * Bar.Length / 2;
-        var system = PinnedBar(PlanarSystem.StandardGravity, TorqueSchedule.Constant(hold));
+        var system = PinnedBar(PlanarSystem.StandardGravity, Schedule.Constant(hold));
         var state = PinnedBarState(system, 0.0, 0.0);
         var dy = new double[system.StateLength];
 
@@ -100,7 +100,7 @@ public class ActuatorTests
             [Upper, Lower],
             Vector2d.Zero,
             [new PinJoint("elbow", Attachment.OnLink("lower", Lower.EndA), Attachment.OnLink("upper", Upper.EndB))],
-            actuators: [new JointActuator("motor", "elbow", TorqueSchedule.Constant(0.4))]);
+            actuators: [new JointActuator("motor", "elbow", Schedule.Constant(0.4))]);
         var state = system.CreateState();
         system.SetBody(state.Values, 0, new Pose2d(Vector2d.Zero, 0), default);
         system.SetBody(state.Values, 1, new Pose2d(Upper.EndB - Lower.EndA, 0), default);
@@ -128,7 +128,7 @@ public class ActuatorTests
     public void RampedTorqueMatchesTheClosedFormWithEveryBreakpointSplit()
     {
         // Breakpoints off the step grid, so each one falls inside a step.
-        var schedule = new TorqueSchedule([new TorquePoint(0.10037, 0), new TorquePoint(0.30071, 0.9), new TorquePoint(0.70011, -0.3)]);
+        var schedule = new Schedule([new SchedulePoint(0.10037, 0), new SchedulePoint(0.30071, 0.9), new SchedulePoint(0.70011, -0.3)]);
         var system = PinnedBar(Vector2d.Zero, schedule);
         var state = PinnedBarState(system, 0.0, 0.0);
         var stepper = new EventSplittingStepper(new Rk4Integrator(), system);
@@ -144,7 +144,7 @@ public class ActuatorTests
     [Fact]
     public void RampedTorqueUnderGravityConvergesAtFourthOrder()
     {
-        var schedule = new TorqueSchedule([new TorquePoint(0.1003, 0), new TorquePoint(0.4007, 15), new TorquePoint(0.9001, 2)]);
+        var schedule = new Schedule([new SchedulePoint(0.1003, 0), new SchedulePoint(0.4007, 15), new SchedulePoint(0.9001, 2)]);
 
         double FinalAngle(double dt)
         {
@@ -170,7 +170,7 @@ public class ActuatorTests
         // where a damped cable from an anchor on the left catches its tip
         // (slack while it hangs, taut near horizontal), then lets it fall.
         var cable = new Cable("stay", Attachment.Ground(new Vector2d(-1.0, 0)), Attachment.OnLink("bar", Bar.EndB), 1.9, 4000, 15);
-        var schedule = new TorqueSchedule([new TorquePoint(0.05, 0), new TorquePoint(0.2501, 40), new TorquePoint(0.6003, 0)]);
+        var schedule = new Schedule([new SchedulePoint(0.05, 0), new SchedulePoint(0.2501, 40), new SchedulePoint(0.6003, 0)]);
         var system = PinnedBar(PlanarSystem.StandardGravity, schedule, [cable]);
         var state = PinnedBarState(system, -Math.PI / 2, 0.0);
         var stepper = new EventSplittingStepper(new Rk4Integrator(), system);
@@ -191,7 +191,7 @@ public class ActuatorTests
     [Fact]
     public void ActuatorTorquesFollowTheScheduleAtTheGivenTime()
     {
-        var schedule = new TorqueSchedule([new TorquePoint(0, 0), new TorquePoint(2, 4)]);
+        var schedule = new Schedule([new SchedulePoint(0, 0), new SchedulePoint(2, 4)]);
         var system = PinnedBar(Vector2d.Zero, schedule);
         var torques = new double[1];
 
@@ -204,8 +204,8 @@ public class ActuatorTests
     [Fact]
     public void ScheduledActuatorsMustBeLatchedButConstantOnesNeedNot()
     {
-        var ramp = PinnedBar(Vector2d.Zero, new TorqueSchedule([new TorquePoint(0, 0), new TorquePoint(1, 1)]));
-        var constant = PinnedBar(Vector2d.Zero, TorqueSchedule.Constant(1));
+        var ramp = PinnedBar(Vector2d.Zero, new Schedule([new SchedulePoint(0, 0), new SchedulePoint(1, 1)]));
+        var constant = PinnedBar(Vector2d.Zero, Schedule.Constant(1));
 
         Assert.Throws<InvalidOperationException>(
             () => ramp.Evaluate(0, PinnedBarState(ramp, 0, 0).Values, new double[ramp.StateLength]));
@@ -216,7 +216,7 @@ public class ActuatorTests
     public void RejectsBadActuators()
     {
         var pin = new PinJoint("pivot", Attachment.OnLink("bar", Bar.EndA), Attachment.Ground(Vector2d.Zero));
-        var one = TorqueSchedule.Constant(1);
+        var one = Schedule.Constant(1);
 
         Assert.Throws<ArgumentException>(
             () => new PlanarSystem([Bar], Vector2d.Zero, [pin], actuators: [new JointActuator("m", "missing", one)]));
