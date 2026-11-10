@@ -34,6 +34,7 @@ public class ReferenceScenarioTests
         new PerturbedBarScenario(),
         new LockingWingScenario(),
         new LockingWingCollapseScenario(),
+        new LockingWingPreloadedScenario(),
     ];
 
     public static TheoryData<string> All() => new(Scenarios.Select(s => s.Name));

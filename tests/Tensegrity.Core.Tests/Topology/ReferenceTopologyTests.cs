@@ -95,6 +95,12 @@ public sealed class ReferenceTopologyTests : IDisposable
                 return (model.System, model.InitialState.ToArray());
             }
 
+            case "locking_wing_preloaded":
+            {
+                var model = Wing.PreloadedGusted();
+                return (model.System, model.InitialState.ToArray());
+            }
+
             default:
                 throw new ArgumentException(name);
         }

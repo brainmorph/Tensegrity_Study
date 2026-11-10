@@ -55,7 +55,7 @@ public static class ReferenceTopologies
         new(HyperextensionStops: true, ElbowPreload: WingElbowPreload, WristPreload: WingWristPreload);
 
     public static IReadOnlyList<string> Names { get; } =
-        ["pendulum", "cable_oscillator", "planar_x", "planar_x_rest", "planar_x_free", "locking_arm", "locking_arm_collapse", "ground_drop", "perturbed_bar", "locking_wing", "locking_wing_collapse"];
+        ["pendulum", "cable_oscillator", "planar_x", "planar_x_rest", "planar_x_free", "locking_arm", "locking_arm_collapse", "ground_drop", "perturbed_bar", "locking_wing", "locking_wing_collapse", "locking_wing_preloaded"];
 
     public static PlanarModel Create(string name) => name switch
     {
@@ -70,6 +70,7 @@ public static class ReferenceTopologies
         "perturbed_bar" => PerturbedBarCase(),
         "locking_wing" => LockingWingGust(),
         "locking_wing_collapse" => LockingWingCollapse(),
+        "locking_wing_preloaded" => LockingWingPreloaded(),
         _ => throw new ArgumentException($"Unknown reference topology '{name}'. Known: {string.Join(", ", Names)}.", nameof(name)),
     };
 
@@ -203,6 +204,13 @@ public static class ReferenceTopologies
         LockingWing.Create(restLengthScales: [1, 1, WingCollapseScale]).With(
             name: "locking_wing_collapse",
             description: WingSummary + ", except the wrist tendon is 8% longer than the lock needs, past its threshold of about 6.3%. Released at rest from straight out, the hand collapses and swings, hanging from the wrist.",
+            simulation: DefaultSimulation());
+
+    /// <summary>The locking wing with its elbow and wrist preloaded against hyperextension stops, hit by the same gust.</summary>
+    public static PlanarModel LockingWingPreloaded() =>
+        LockingWing.Create(PreloadedWing, loads: [LockingWing.WingtipGust(WingGustImpulse, WingGustStart, WingGustDuration)]).With(
+            name: "locking_wing_preloaded",
+            description: WingSummary + ", and also stops against bending upward. The elbow and wrist tendons are shorter, so besides holding the wing they press each joint into its stop with 0.5 N m (elbow) and 0.075 N m (wrist), about its own gravity moment; this roughly doubles their tension. The stops sit preload/k short of straight (1.4 and 0.9 degrees), so the straight pose is exact. At 0.1 s the locking_wing gust hits the wingtip. The wrist bends to about 23 degrees as before, the elbow only to about 6 (10 without preload), and on the rebound both stop at their stops instead of the hand flicking up 52 degrees. The lock holds and the wing rings back to straight out.",
             simulation: DefaultSimulation());
 
     /// <summary>The free-floating X with no gravity, after opposite twists on its struts (zero total momentum).</summary>

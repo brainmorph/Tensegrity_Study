@@ -100,3 +100,41 @@ public sealed class LockingWingCollapseScenario : IReferenceScenario
         return PlanarRecording.Record(model, model.CreateInitialState(), [LockingWing.Wrist]);
     }
 }
+
+/// <summary>
+/// Test 10 reference run for the wing preloaded against hyperextension
+/// stops: the locking_wing gust, for comparison. Also records the stops'
+/// preload torques, the zero holding torques and the three predicted
+/// thresholds with the stops.
+/// </summary>
+public sealed class LockingWingPreloadedScenario : IReferenceScenario
+{
+    public string Name => "locking_wing_preloaded";
+
+    public string Description =>
+        "The locking_wing wing and gust, with stops against bending upward at the elbow and wrist. The elbow and wrist tendons are shortened to press each joint into its stop with 0.5 N m and 0.075 N m, about its own gravity moment. The stops catch the rebound and the lock holds. RK4 with event splitting, dt 1e-4 s, 1 s, sampled every 0.05 s.";
+
+    public IReadOnlyDictionary<string, double[]> Run()
+    {
+        var model = Wing.PreloadedGusted();
+        var system = model.System;
+        var output = PlanarRecording.Record(model, model.CreateInitialState(), [LockingWing.Shoulder, LockingWing.Elbow, LockingWing.Wrist])
+            .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
+
+        var hold = system.SolveHoldingTorques(0, model.InitialState, [LockingWing.Shoulder, LockingWing.Elbow, LockingWing.Wrist]);
+        output["holding_torque_shoulder"] = [hold[LockingWing.Shoulder]];
+        output["holding_torque_elbow"] = [hold[LockingWing.Elbow]];
+        output["holding_torque_wrist"] = [hold[LockingWing.Wrist]];
+
+        var stops = new double[3];
+        system.GetLimitTorques(model.InitialState, stops);
+        output["preload_torque_elbow"] = [stops[1]];
+        output["preload_torque_wrist"] = [stops[2]];
+
+        var statics = ChainStatics.ForWing(Wing.Preloaded(), ReferenceTopologies.PreloadedWing);
+        output["lock_threshold_shoulder"] = [statics.Fold(0).Scale];
+        output["lock_threshold_elbow"] = [statics.Fold(1).Scale];
+        output["lock_threshold_wrist"] = [statics.Fold(2).Scale];
+        return output;
+    }
+}
