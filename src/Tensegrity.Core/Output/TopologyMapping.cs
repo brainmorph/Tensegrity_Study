@@ -37,7 +37,8 @@ public static class TopologyMapping
             cables,
             new ConstraintStabilization(document.ConstraintStabilization),
             actuators,
-            ToGround(document.Ground, where));
+            ToGround(document.Ground, where),
+            (document.Loads ?? []).Select(l => ToLoad(l, where)));
 
         var state = system.CreateState().Values;
         for (var b = 0; b < links.Length; b++)
@@ -105,6 +106,13 @@ public static class TopologyMapping
                 Damping = c.Damping,
             }).ToList(),
             Actuators = system.Actuators.Count == 0 ? null : ActuatorDocuments(system),
+            Loads = system.Loads.Count == 0 ? null : system.Loads.Select(l => new LoadDocument
+            {
+                Id = l.Id,
+                Link = l.Attachment.LinkId!,
+                Point = [l.Attachment.Point.X, l.Attachment.Point.Y],
+                Schedule = l.Points.Select(p => new LoadPointDocument { Time = p.Time, Fx = p.Fx, Fy = p.Fy }).ToList(),
+            }).ToList(),
             Ground = ToDocument(system.GroundLine),
             Simulation = simulation,
         };
@@ -133,6 +141,20 @@ public static class TopologyMapping
             document.Id,
             document.Pin,
             new Schedule(document.Schedule.Select(p => new SchedulePoint(p.Time, p.Torque))));
+    }
+
+    private static ExternalLoad ToLoad(LoadDocument document, string where)
+    {
+        if (document.Schedule is null || document.Schedule.Count == 0)
+        {
+            throw new FormatException($"{where}: load '{document.Id}' has no schedule.");
+        }
+
+        return new ExternalLoad(
+            document.Id,
+            document.Link,
+            ToVector(document.Point, $"{where} load '{document.Id}' point"),
+            document.Schedule.Select(p => new LoadPoint(p.Time, p.Fx, p.Fy)));
     }
 
     private static GroundLine? ToGround(GroundDocument? document, string where)

@@ -226,9 +226,9 @@ public class GroundContactTests
         var system = BarOnGround(PlanarSystem.StandardGravity);
 
         Assert.Equal(2, system.ContactCount);
-        Assert.Equal((6 * 1) + 2 + 2, system.StateLength);
-        Assert.Equal(8, system.ExtensionIndex(0));
-        Assert.Equal(9, system.ExtensionIndex(1));
+        Assert.Equal((6 * 1) + 3 + 2, system.StateLength);
+        Assert.Equal(9, system.ExtensionIndex(0));
+        Assert.Equal(10, system.ExtensionIndex(1));
         Assert.Throws<ArgumentOutOfRangeException>(() => system.ExtensionIndex(2));
         Assert.Throws<ArgumentException>(() => new PlanarSystem(
             [Bar],

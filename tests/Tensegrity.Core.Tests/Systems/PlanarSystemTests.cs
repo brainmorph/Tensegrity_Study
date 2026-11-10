@@ -11,13 +11,14 @@ public class PlanarSystemTests
         new([PlanarLink.SlenderBar("a", 1.0, 1.0), PlanarLink.SlenderBar("b", 2.0, 0.5)], PlanarSystem.StandardGravity);
 
     [Fact]
-    public void StateLayoutIsPositionsThenVelocitiesThenDissipatedEnergyThenActuatorWork()
+    public void StateLayoutIsPositionsThenVelocitiesThenDissipatedEnergyThenActuatorAndExternalWork()
     {
         var system = TwoBodies();
 
-        Assert.Equal(14, system.StateLength);
+        Assert.Equal(15, system.StateLength);
         Assert.Equal(12, system.DissipatedEnergyIndex);
         Assert.Equal(13, system.ActuatorWorkIndex);
+        Assert.Equal(14, system.ExternalWorkIndex);
         Assert.Equal(0, system.PositionIndex(0));
         Assert.Equal(3, system.PositionIndex(1));
         Assert.Equal(6, system.VelocityIndex(0));

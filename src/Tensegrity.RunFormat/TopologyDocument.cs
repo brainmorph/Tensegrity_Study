@@ -33,6 +33,10 @@ public sealed class TopologyDocument
     /// <summary>Joint actuators; null (omitted from the file) when there are none.</summary>
     public List<ActuatorDocument>? Actuators { get; set; }
 
+    /// <summary>External loads (perturbations); null (omitted from the file) when there are none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<LoadDocument>? Loads { get; set; }
+
     /// <summary>The ground line; null (omitted from the file) when there is none.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public GroundDocument? Ground { get; set; }
@@ -178,6 +182,36 @@ public sealed class GroundDocument
     public double TangentialDamping { get; set; }
 
     public List<ContactPointDocument> Contacts { get; set; } = [];
+}
+
+/// <summary>
+/// A force given in the world frame at a body-fixed point on a link,
+/// piecewise-linear in time through <see cref="Schedule"/> and held constant
+/// before the first point and after the last.
+/// </summary>
+public sealed class LoadDocument
+{
+    public string Id { get; set; } = string.Empty;
+
+    public string Link { get; set; } = string.Empty;
+
+    /// <summary>Body-frame point [x, y] on <see cref="Link"/>.</summary>
+    public double[] Point { get; set; } = [0, 0];
+
+    /// <summary>Breakpoints in strictly increasing time.</summary>
+    public List<LoadPointDocument> Schedule { get; set; } = [];
+}
+
+public sealed class LoadPointDocument
+{
+    /// <summary>Time, s.</summary>
+    public double Time { get; set; }
+
+    /// <summary>World x component of the force, N.</summary>
+    public double Fx { get; set; }
+
+    /// <summary>World y component of the force, N.</summary>
+    public double Fy { get; set; }
 }
 
 /// <summary>A body-fixed point that can touch the ground.</summary>

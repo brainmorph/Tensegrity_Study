@@ -100,6 +100,7 @@ public static class RunRecorder
                 energy.Elastic.Add(system.ElasticEnergy(s.Values));
                 energy.Dissipated.Add(system.DissipatedEnergy(s.Values));
                 energy.ActuatorWork.Add(system.ActuatorWork(s.Values));
+                energy.ExternalWork.Add(system.ExternalWork(s.Values));
                 energy.Total.Add(system.TotalEnergy(s.Values));
             });
         }
@@ -174,6 +175,14 @@ public static class RunRecorder
             channels.Add(FrameChannels.PinLimitTorque(pin.Id));
         }
 
+        foreach (var load in system.Loads)
+        {
+            channels.Add(FrameChannels.LoadFx(load.Id));
+            channels.Add(FrameChannels.LoadFy(load.Id));
+            channels.Add(FrameChannels.LoadX(load.Id));
+            channels.Add(FrameChannels.LoadY(load.Id));
+        }
+
         foreach (var contact in system.GroundLine?.Points ?? [])
         {
             channels.Add(FrameChannels.ContactNormal(contact.Id));
@@ -244,6 +253,17 @@ public static class RunRecorder
             {
                 Put(limitTorques[p]);
             }
+        }
+
+        var loadForces = new Vector2d[system.Loads.Count];
+        system.GetLoadForces(state.Time, loadForces);
+        for (var l = 0; l < loadForces.Length; l++)
+        {
+            var at = system.WorldPoint(y, system.Loads[l].Attachment);
+            Put(loadForces[l].X);
+            Put(loadForces[l].Y);
+            Put(at.X);
+            Put(at.Y);
         }
 
         var contactForces = new Vector2d[system.ContactCount];

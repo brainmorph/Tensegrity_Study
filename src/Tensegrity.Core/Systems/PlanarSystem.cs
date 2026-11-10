@@ -10,18 +10,18 @@ namespace Tensegrity.Core.Systems;
 /// constraints and cables, in maximal coordinates.
 ///
 /// State layout for n bodies and m ground contact points (length
-/// 6n + 2 + m), positions first, then velocities, then the energy
-/// dissipated so far and the work done by the joint actuators so far, then
-/// each contact point's tangential spring extension (see
-/// <see cref="GroundLine"/>):
+/// 6n + 3 + m), positions first, then velocities, then the energy
+/// dissipated so far, the work done by the joint actuators so far and the
+/// work done by external loads so far, then each contact point's tangential
+/// spring extension (see <see cref="GroundLine"/>):
 /// <code>
-/// [ x0 y0 θ0  x1 y1 θ1 … | ẋ0 ẏ0 θ̇0  ẋ1 ẏ1 θ̇1 … | E_diss  W_act | z0 z1 … ]
+/// [ x0 y0 θ0  x1 y1 θ1 … | ẋ0 ẏ0 θ̇0  ẋ1 ẏ1 θ̇1 … | E_diss  W_act  W_ext | z0 z1 … ]
 /// </code>
 /// Splitting positions from velocities keeps the generalized-coordinate block
-/// contiguous for the constraint solver. E_diss and W_act are integrated with
-/// the rest of the state, so the energy balance (PLAN.md 4.3)
+/// contiguous for the constraint solver. E_diss, W_act and W_ext are
+/// integrated with the rest of the state, so the energy balance (PLAN.md 4.3)
 /// <code>
-/// kinetic + gravitational + elastic + dissipated − actuator work = constant
+/// kinetic + gravitational + elastic + dissipated − actuator work − external work = constant
 /// </code>
 /// holds to integrator accuracy; see <see cref="TotalEnergy"/>.
 ///
@@ -38,7 +38,7 @@ namespace Tensegrity.Core.Systems;
 /// joint-limit stops between clear, pressing and recoiling (see
 /// <see cref="JointLimit"/>), ground contacts between clear, pressing and
 /// recoiling and between stick and slip (see <see cref="GroundLine"/>), and
-/// actuator schedules between their linear segments (see
+/// actuator and external load schedules between their linear segments (see
 /// <see cref="Schedule"/>). As an <see cref="ISwitchedSystem"/>,
 /// <see cref="Evaluate"/> uses each element's latched mode, so a system
 /// with cables, joint limits, a ground line or non-constant schedules must
@@ -78,6 +78,9 @@ public sealed class PlanarSystem : ISwitchedSystem
     private readonly ResolvedPoint[] contacts;
     private readonly ContactMode[] latchedNormals;
     private readonly FrictionMode[] latchedFrictions;
+    private readonly ExternalLoad[] loads;
+    private readonly ResolvedPoint[] loadPoints;
+    private readonly int[] latchedLoadSegments;
     private bool modesLatched;
 
     // Scratch for the constraint solve, sized once.
@@ -93,7 +96,8 @@ public sealed class PlanarSystem : ISwitchedSystem
         IEnumerable<Cable>? cables = null,
         ConstraintStabilization? stabilization = null,
         IEnumerable<JointActuator>? actuators = null,
-        GroundLine? ground = null)
+        GroundLine? ground = null,
+        IEnumerable<ExternalLoad>? loads = null)
     {
         ArgumentNullException.ThrowIfNull(links);
         this.links = links.ToArray();
@@ -141,11 +145,17 @@ public sealed class PlanarSystem : ISwitchedSystem
         latchedNormals = new ContactMode[contacts.Length];
         latchedFrictions = new FrictionMode[contacts.Length];
 
+        this.loads = loads?.ToArray() ?? [];
+        RequireUniqueIds(this.loads.Select(l => l.Id), "load", nameof(loads));
+        loadPoints = this.loads.Select(l => Resolve(l.Attachment, $"load '{l.Id}'")).ToArray();
+        latchedLoadSegments = new int[2 * this.loads.Length];
+
         // With nothing that switches, the default latch is already correct.
         modesLatched = this.cables.Length == 0
             && this.pins.All(p => p.Limit is null)
             && ground is null
-            && this.actuators.All(a => a.Schedule.IsConstant);
+            && this.actuators.All(a => a.Schedule.IsConstant)
+            && this.loads.All(l => l.Fx.IsConstant && l.Fy.IsConstant);
 
         forces = new double[CoordinateCount];
         jacobian = new double[ConstraintCount * CoordinateCount];
@@ -160,6 +170,9 @@ public sealed class PlanarSystem : ISwitchedSystem
     public IReadOnlyList<Cable> Cables => cables;
 
     public IReadOnlyList<JointActuator> Actuators => actuators;
+
+    /// <summary>External loads (perturbations).</summary>
+    public IReadOnlyList<ExternalLoad> Loads => loads;
 
     /// <summary>The ground line, or null for none.</summary>
     public GroundLine? GroundLine => ground;
@@ -179,8 +192,8 @@ public sealed class PlanarSystem : ISwitchedSystem
     /// <summary>Number of generalized coordinates: 3 per body.</summary>
     public int CoordinateCount => DofPerBody * links.Length;
 
-    /// <summary>Length of the state vector: coordinates, velocities, dissipated energy, actuator work and contact extensions.</summary>
-    public int StateLength => (2 * CoordinateCount) + 2 + contacts.Length;
+    /// <summary>Length of the state vector: coordinates, velocities, dissipated energy, actuator work, external work and contact extensions.</summary>
+    public int StateLength => ExtensionBase + contacts.Length;
 
     /// <summary>Index of the cumulative dissipated energy in the state vector.</summary>
     public int DissipatedEnergyIndex => 2 * CoordinateCount;
@@ -188,8 +201,13 @@ public sealed class PlanarSystem : ISwitchedSystem
     /// <summary>Index of the cumulative actuator work in the state vector.</summary>
     public int ActuatorWorkIndex => (2 * CoordinateCount) + 1;
 
+    /// <summary>Index of the cumulative work done by external loads in the state vector.</summary>
+    public int ExternalWorkIndex => (2 * CoordinateCount) + 2;
+
     /// <summary>Index of contact point <paramref name="contact"/>'s tangential spring extension z in the state vector.</summary>
-    public int ExtensionIndex(int contact) => (2 * CoordinateCount) + 2 + CheckContact(contact);
+    public int ExtensionIndex(int contact) => ExtensionBase + CheckContact(contact);
+
+    private int ExtensionBase => (2 * CoordinateCount) + 3;
 
     public int PositionIndex(int body) => DofPerBody * CheckBody(body);
 
@@ -258,6 +276,7 @@ public sealed class PlanarSystem : ISwitchedSystem
 
         derivative[DissipatedEnergyIndex] = DissipatedPower(state);
         derivative[ActuatorWorkIndex] = ActuatorPower(time, state, useLatchedModes: true);
+        derivative[ExternalWorkIndex] = ExternalPower(time, state, useLatchedModes: true);
 
         for (var i = 0; i < contacts.Length; i++)
         {
@@ -298,8 +317,8 @@ public sealed class PlanarSystem : ISwitchedSystem
     /// uniform bar, so the +x half has mass m/2 centered at local (ℓ/4, 0).
     /// Cable and pin forces count toward the +x half when their attachment
     /// has local x &gt; 0; a point exactly on the midpoint acts on neither.
-    /// Ground contact forces count like cable forces, by where the contact
-    /// point sits. Uses the physical cable law, ground contact law,
+    /// Ground contact and external load forces count like cable forces, by
+    /// where their point sits. Uses the physical cable law, ground contact law,
     /// joint-limit torques and actuator torques at the given time and state.
     /// Limit and actuator torques are pure couples, so they enter only
     /// through the link's acceleration.
@@ -343,6 +362,11 @@ public sealed class PlanarSystem : ISwitchedSystem
         for (var i = 0; i < contacts.Length; i++)
         {
             AddToHalf(halfForce, contacts[i], ContactAt(state, i, useLatchedModes: false).Force);
+        }
+
+        for (var l = 0; l < loads.Length; l++)
+        {
+            AddToHalf(halfForce, loadPoints[l], loads[l].ForceAt(time));
         }
 
         for (var b = 0; b < links.Length; b++)
@@ -532,6 +556,12 @@ public sealed class PlanarSystem : ISwitchedSystem
             latchedSegments[a] = actuators[a].Schedule.SegmentAt(time);
         }
 
+        for (var l = 0; l < loads.Length; l++)
+        {
+            latchedLoadSegments[2 * l] = loads[l].Fx.SegmentAt(time);
+            latchedLoadSegments[(2 * l) + 1] = loads[l].Fy.SegmentAt(time);
+        }
+
         modesLatched = true;
     }
 
@@ -572,6 +602,14 @@ public sealed class PlanarSystem : ISwitchedSystem
         for (var a = 0; a < actuators.Length; a++)
         {
             if (actuators[a].Schedule.SegmentAt(time) != latchedSegments[a])
+            {
+                return false;
+            }
+        }
+
+        for (var l = 0; l < loads.Length; l++)
+        {
+            if (loads[l].Fx.SegmentAt(time) != latchedLoadSegments[2 * l] || loads[l].Fy.SegmentAt(time) != latchedLoadSegments[(2 * l) + 1])
             {
                 return false;
             }
@@ -794,6 +832,27 @@ public sealed class PlanarSystem : ISwitchedSystem
         return state[DissipatedEnergyIndex];
     }
 
+    /// <summary>Work done on the system by external loads since the start of the run, J.</summary>
+    public double ExternalWork(ReadOnlySpan<double> state)
+    {
+        CheckLength(state.Length);
+        return state[ExternalWorkIndex];
+    }
+
+    /// <summary>Force of every external load at <paramref name="time"/>, N (world frame), from its schedule.</summary>
+    public void GetLoadForces(double time, Span<Vector2d> forces)
+    {
+        if (forces.Length != loads.Length)
+        {
+            throw new ArgumentException($"Expected {loads.Length} forces, got {forces.Length}.", nameof(forces));
+        }
+
+        for (var l = 0; l < loads.Length; l++)
+        {
+            forces[l] = loads[l].ForceAt(time);
+        }
+    }
+
     /// <summary>Work done on the system by the joint actuators since the start of the run, J.</summary>
     public double ActuatorWork(ReadOnlySpan<double> state)
     {
@@ -807,11 +866,11 @@ public sealed class PlanarSystem : ISwitchedSystem
 
     /// <summary>
     /// Mechanical energy plus energy dissipated so far, minus the work the
-    /// actuators have put in, J. It is conserved, so its drift measures the
-    /// integration error (PLAN.md 4.3, test 7).
+    /// actuators and external loads have put in, J. It is conserved, so its
+    /// drift measures the integration error (PLAN.md 4.3, test 7).
     /// </summary>
     public double TotalEnergy(ReadOnlySpan<double> state) =>
-        MechanicalEnergy(state) + DissipatedEnergy(state) - ActuatorWork(state);
+        MechanicalEnergy(state) + DissipatedEnergy(state) - ActuatorWork(state) - ExternalWork(state);
 
     /// <summary>Total angular momentum about a fixed world point, kg·m²/s.</summary>
     public double AngularMomentum(ReadOnlySpan<double> state, Vector2d about)
@@ -855,6 +914,11 @@ public sealed class PlanarSystem : ISwitchedSystem
             // The cable pulls end A toward B and end B toward A.
             AddPointForce(state, cableA[c], tension * direction);
             AddPointForce(state, cableB[c], -tension * direction);
+        }
+
+        for (var l = 0; l < loads.Length; l++)
+        {
+            AddPointForce(state, loadPoints[l], LoadForce(l, time, useLatchedModes));
         }
 
         for (var a = 0; a < actuators.Length; a++)
@@ -909,7 +973,7 @@ public sealed class PlanarSystem : ISwitchedSystem
         var point = contacts[contact];
         var position = WorldPoint(state, point);
         var velocity = PointVelocity(state, point);
-        var extension = state[(2 * CoordinateCount) + 2 + contact];
+        var extension = state[ExtensionBase + contact];
         var penetration = g.Penetration(position.Y);
         var rate = -velocity.Y;
 
@@ -1120,6 +1184,26 @@ public sealed class PlanarSystem : ISwitchedSystem
         {
             var p = actuatorPin[a];
             total += ActuatorTorque(a, time, useLatchedModes) * RelativeRate(state, p);
+        }
+
+        return total;
+    }
+
+    private Vector2d LoadForce(int load, double time, bool useLatchedModes)
+    {
+        var l = loads[load];
+        return useLatchedModes
+            ? new Vector2d(l.Fx.ValueInSegment(latchedLoadSegments[2 * load], time), l.Fy.ValueInSegment(latchedLoadSegments[(2 * load) + 1], time))
+            : l.ForceAt(time);
+    }
+
+    /// <summary>Rate of work done by the external loads, Σ F·v at each load's point, W.</summary>
+    private double ExternalPower(double time, ReadOnlySpan<double> state, bool useLatchedModes)
+    {
+        var total = 0.0;
+        for (var l = 0; l < loads.Length; l++)
+        {
+            total += Vector2d.Dot(LoadForce(l, time, useLatchedModes), PointVelocity(state, loadPoints[l]));
         }
 
         return total;

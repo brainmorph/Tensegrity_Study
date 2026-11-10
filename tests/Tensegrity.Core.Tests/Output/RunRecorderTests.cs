@@ -239,6 +239,9 @@ public sealed class RunRecorderTests : IDisposable
         Assert.Null(manifest.Topology.Actuators);
         Assert.DoesNotContain(manifest.FrameLayout.Channels, c => c.StartsWith("actuator.", StringComparison.Ordinal));
         Assert.All(manifest.Diagnostics.Energy.ActuatorWork, w => Assert.Equal(0.0, w));
+        Assert.All(manifest.Diagnostics.Energy.ExternalWork, w => Assert.Equal(0.0, w));
+        Assert.Null(manifest.Topology.Loads);
+        Assert.DoesNotContain(manifest.FrameLayout.Channels, c => c.StartsWith("load.", StringComparison.Ordinal));
 
         var text = File.ReadAllText(Path.Combine(RunDir("run"), RunFiles.Manifest));
         Assert.DoesNotContain("\"friction\"", text, StringComparison.Ordinal);
@@ -348,6 +351,46 @@ public sealed class RunRecorderTests : IDisposable
             run.Value(last, FrameChannels.LinkX("bar")) - 0.5f,
             run.Value(last, FrameChannels.ContactX("left")),
             1e-3f);
+    }
+
+    [Fact]
+    public void LoadsRoundTripAndAreRecordedAsForceChannels()
+    {
+        var bar = PlanarLink.SlenderBar("bar", mass: 2.0, length: 1.2);
+        var system = new PlanarSystem(
+            [bar],
+            PlanarSystem.StandardGravity,
+            [new PinJoint("pivot", Attachment.OnLink("bar", bar.EndA), Attachment.Ground(Vector2d.Zero))],
+            loads: [ExternalLoad.Pulse("tap", "bar", bar.EndB, new Vector2d(0, 0.5), start: 0.0503, duration: 0.02)]);
+        var state = system.CreateState();
+        system.SetBody(state.Values, 0, new Pose2d((-bar.EndA).Rotated(-0.5), -0.5), default);
+
+        var document = TopologyMapping.ToDocument(system, state.Values, "tapped_bar");
+        Assert.Equal("tap", Assert.Single(document.Loads!).Id);
+        var (rebuilt, rebuiltState) = TopologyMapping.FromDocument(
+            System.Text.Json.JsonSerializer.Deserialize<TopologyDocument>(RunFiles.SerializeTopology(document), RunFiles.Json)!);
+        Assert.Equal(RunFiles.SerializeTopology(document), RunFiles.SerializeTopology(TopologyMapping.ToDocument(rebuilt, rebuiltState, "tapped_bar")));
+
+        var settings = new RunSettings(1e-4, 2_000, 10);
+        var manifest = RunRecorder.Record(system, state, settings, Metadata with { TopologyName = "tapped_bar" }, RunDir("run"));
+        var run = RunReader.Open(RunDir("run"));
+
+        Assert.Equal(3, manifest.Diagnostics.EventCount);
+        Assert.InRange(manifest.Diagnostics.MaxEnergyBalanceError, 0.0, 1e-10);
+        // The bar is falling when the upward tap lands, so the tap takes energy out.
+        Assert.True(manifest.Diagnostics.Energy.ExternalWork[^1] < -1e-3, $"The tap did {manifest.Diagnostics.Energy.ExternalWork[^1]} J.");
+        var load = system.Loads[0];
+        for (var f = 0; f < run.FrameCount; f++)
+        {
+            var expected = load.ForceAt(f * settings.FrameStride * settings.Dt);
+            Assert.Equal((float)expected.Y, run.Value(f, FrameChannels.LoadFy("tap")), 1e-3f);
+            Assert.Equal(0f, run.Value(f, FrameChannels.LoadFx("tap")));
+        }
+
+        // The load point is the bar's far end, recorded so a renderer can place an arrow.
+        var last = run.FrameCount - 1;
+        var theta = run.Value(last, FrameChannels.LinkTheta("bar"));
+        Assert.Equal(1.2f * MathF.Cos(theta), run.Value(last, FrameChannels.LoadX("tap")), 1e-5f);
     }
 
     [Fact]

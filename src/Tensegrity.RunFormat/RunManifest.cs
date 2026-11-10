@@ -139,6 +139,16 @@ public static class FrameChannels
     /// <summary>Torque a pin's joint limit applies to its end A, N·m (end B takes the opposite). Only pins with a limit have it.</summary>
     public static string PinLimitTorque(string pin) => $"pin.{pin}.limit_torque";
 
+    /// <summary>World force of an external load at that frame's time, N.</summary>
+    public static string LoadFx(string load) => $"load.{load}.fx";
+
+    public static string LoadFy(string load) => $"load.{load}.fy";
+
+    /// <summary>World position of the point a load acts at.</summary>
+    public static string LoadX(string load) => $"load.{load}.x";
+
+    public static string LoadY(string load) => $"load.{load}.y";
+
     /// <summary>Normal force the ground exerts on a contact point, N (upward, never negative).</summary>
     public static string ContactNormal(string contact) => $"contact.{contact}.normal";
 
@@ -168,7 +178,7 @@ public sealed class RunDiagnostics
     /// <summary>Worst pin velocity error over every step, m/s.</summary>
     public double MaxPinVelocityResidual { get; set; }
 
-    /// <summary>Steps split at a cable, joint-limit or ground contact mode switch, or an actuator schedule breakpoint.</summary>
+    /// <summary>Steps split at a cable, joint-limit or ground contact mode switch, or an actuator or load schedule breakpoint.</summary>
     public long EventCount { get; set; }
 
     /// <summary>Steps that hit the per-step switch cap and finished unsplit.</summary>
@@ -204,7 +214,10 @@ public sealed class EnergySeries
     /// <summary>Work done by the joint actuators so far.</summary>
     public List<double> ActuatorWork { get; set; } = [];
 
-    /// <summary>Kinetic + gravitational + elastic + dissipated − actuator work: constant up to integration error.</summary>
+    /// <summary>Work done by external loads so far.</summary>
+    public List<double> ExternalWork { get; set; } = [];
+
+    /// <summary>Kinetic + gravitational + elastic + dissipated − actuator work − external work: constant up to integration error.</summary>
     public List<double> Total { get; set; } = [];
 }
 
