@@ -8,6 +8,12 @@ Run one with:
 dotnet run --project src/Tensegrity.Cli -- run --topology topologies/planar_x.json --seed 42
 ```
 
+To perturb a run without editing its file, add `--impulse LINK,X,Y,JX,JY,START,DURATION` (a triangular force pulse), `--force LINK,X,Y,T,FX,FY[,T,FX,FY...]` (a piecewise-linear force) or `--ground-drop START,DURATION,DEPTH`. Forces are in the world frame and points are in the link's body frame. `--impulse` and `--force` may be repeated. They become loads named `cli_impulse_N` and `cli_force_N`, so the run manifest records them. `run`, `dt-study` and `sweep` all take them. For example, to knock the locked arm's forearm tip down with 0.05 N s at 0.2 s:
+
+```
+dotnet run --project src/Tensegrity.Cli -- run --topology topologies/locking_arm.json --impulse lower,0.175,0,0,-0.05,0.2,0.005
+```
+
 ## Reference files
 
 These seven files are generated, not hand-edited. They come from `ReferenceTopologies` in `src/Tensegrity.Topology`. Regenerate them with:
@@ -100,3 +106,81 @@ What the curves say:
 - **The lock is not.** With zero torque, a lengthened tendon does not drop the arm. The arm droops to a new stable pose where the tendon is taut again. The lock is lost only at the fold that test 10 predicts and checks: scale 1.0819 for the elbow (+11.1 mm) and 1.0850 for the shoulder (+13.1 mm). This margin comes from the tendon geometry (the post behind the joint), not from pre-tension.
 
 Computed at commit `74d0b39` plus the `effort` command.
+
+## Effort against joint angle (M6)
+
+`effort --bend PIN` keeps the cables as designed and bends one joint instead, by `--from` to `--to` degrees. The links on the pin's outer side turn rigidly about it. Each row gives every cable's tension and the holding torque in the bent pose, at rest. This is the stiffness of a tendon lock: how hard the structure pushes back when a joint is moved off its pose.
+
+```
+dotnet run --project src/Tensegrity.Cli -- effort --topology topologies/locking_wing.json --bend wrist --from -20 --to 20 --steps 9
+dotnet run --project src/Tensegrity.Cli -- effort --topology topologies/locking_wing.json --bend elbow --from -20 --to 20 --steps 9
+```
+
+Negative bends fold the joint down. The torques are the holding torque at the bent joint, in N m. The other joints need almost none.
+
+| Bend (deg) | Wrist tendon (N) | Wrist torque | Elbow tendon (N) | Elbow torque |
+|---|---|---|---|---|
+| −20 | 56.728 | −0.5786 | 79.774 | −1.0525 |
+| −15 | 46.213 | −0.5595 | 66.549 | −0.9706 |
+| −10 | 33.844 | −0.4636 | 51.569 | −0.7746 |
+| −5 | 19.648 | −0.2803 | 34.875 | −0.4540 |
+| 0 | 3.658 | 0.0000 | 16.512 | 0.0000 |
+| +5 | 0 (slack) | 0.0733 | 0 (slack) | 0.4837 |
+| +20 | 0 (slack) | 0.0691 | 0 (slack) | 0.4563 |
+
+What the curves say:
+
+- **The lock is one-sided.** Folding a joint stretches its tendon, which pushes back hard. Bending it upward slackens the tendon within 5°, and from then on the joint carries only its outer links' weight moment. The hyperextension stops of `locking_wing_preloaded.json` exist for exactly this side.
+- **The stiffness fades toward the fold.** The wrist's restoring torque grows by 0.28 N m over the first 5° but by only 0.02 N m from −15° to −20°, though the tension still climbs. Folding the hand turns the tendon toward the pin, so its moment arm shrinks faster than its tension grows. This is the approach to the fold that test 10 locates at about −33°.
+
+When the swept pins are redundant, as in a closed loop with every joint listed, both `effort` modes give the torques with the smallest sum of squares and say so. A pin in a closed loop cannot be bent alone.
+
+## Parameter sweeps (M6)
+
+`sweep` runs a topology over a grid of one or two parameters and reports which configurations lock and how much effort each needs:
+
+- `--vary rest:CABLE=VALUES` scales a rest length.
+- `--vary anchor:CABLE.a.y=VALUES` moves one coordinate of a cable end (`a` or `b`, `x` or `y`) by an offset in m. The rest length is scaled with the cable's length, so the initial tension stays as designed and only the geometry changes.
+- `VALUES` is `FROM:TO:N` or a comma-separated list.
+
+Each configuration runs from the file's initial state, its loads included. It **collapses** when any joint angle moves more than `--collapse-angle` (default 90°) from where it started. The default is wide enough that the plain wing's 52.5° upward flick on the gust's rebound still counts as held. The effort columns are the holding torque in the starting pose, as in `effort`. `--csv FILE` writes every column, including each cable's tension.
+
+Sweeping the gusted wing tendon by tendon, in steps of 0.001:
+
+```
+dotnet run --project src/Tensegrity.Cli -- sweep --topology topologies/locking_wing.json --vary rest:wrist_tendon=1.0:1.02:21 --duration 6
+```
+
+| Tendon | Static fold (test 10) | Survives the gust up to | First collapse | Joint that gives way |
+|---|---|---|---|---|
+| Shoulder | 1.0733 | 1.025 | 1.026 | wrist |
+| Elbow | 1.0681 | 1.030 | 1.031 | elbow |
+| Wrist | 1.0633 | 1.008 | 1.009 | wrist |
+
+What the sweep says:
+
+- **A gust leaves far less margin than the statics.** The statics say how long a tendon can get before no stable pose is left. The sweep asks whether the wing still rides out its reference gust. For the wrist the answer shrinks from 6.3% to 0.8%: the gust alone already bends the wrist two thirds of the way to its fold.
+- **A long tendon can fail at another joint.** With the shoulder tendon long, the whole wing droops and the gust then folds the *wrist*, not the shoulder.
+- **Released from straight, a lock can fail short of its fold.** Without the gust, a wing whose tendon is too long swings from straight toward its drooped rest pose and overshoots. Short of the fold it holds (the tests check each tendon 0.02 short of its fold), but the dynamic boundary sits a little below the static one. For the wrist it falls between 1.05 and 1.06, against the 1.0633 fold.
+
+A second `--vary` makes a grid and prints a map. Moving the wrist post (the tendon's end on the forearm) up or down against the wrist tendon's length, gust included:
+
+```
+dotnet run --project src/Tensegrity.Cli -- sweep --topology topologies/locking_wing.json --duration 6 --vary anchor:wrist_tendon.a.y=-0.01:0.02:7 --vary rest:wrist_tendon=1.0:1.02:11
+```
+
+```
+rows anchor:wrist_tendon.a.y, columns rest:wrist_tendon; L locked, x collapsed.
+columns: 1, 1.002, 1.004, 1.006, 1.008, 1.01, 1.012, 1.014, 1.016, 1.018, 1.02
+         -0.01 | x x x x x x x x x x x
+        -0.005 | x x x x x x x x x x x
+             0 | L L L L L x x x x x x
+         0.005 | L L L L L L L L L L L
+          0.01 | L L L L L L L L L L L
+         0.015 | L L L L L L L L L L L
+          0.02 | L L L L L L L L L L L
+```
+
+The post's height decides whether the lock rides out the gust. Lowered 5 mm, at the same tension, the wing loses the hand even with its tendon at design length. Raised 5 mm, it holds across the whole 2% range. A higher post gives the tendon a longer moment arm, which delays the fold.
+
+Computed at commit `1d70c27`.
