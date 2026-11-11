@@ -18,11 +18,18 @@ namespace Tensegrity.Core.Systems;
 /// <paramref name="Pins"/>.
 /// </param>
 /// <param name="MaxAngularAcceleration">Largest angular acceleration left, rad/s².</param>
+/// <param name="Redundancy">
+/// How many independent torque combinations at these pins move nothing.
+/// Zero means the torques are the only ones that hold the state; above
+/// zero the pins are redundant and <paramref name="Torques"/> is the set
+/// with the smallest Σ τ².
+/// </param>
 public sealed record HoldingTorques(
     IReadOnlyList<string> Pins,
     IReadOnlyList<double> Torques,
     double MaxLinearAcceleration,
-    double MaxAngularAcceleration)
+    double MaxAngularAcceleration,
+    int Redundancy = 0)
 {
     /// <summary>Torque at pin <paramref name="pinId"/>, N·m.</summary>
     public double this[string pinId]

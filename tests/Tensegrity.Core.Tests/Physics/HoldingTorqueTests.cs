@@ -174,6 +174,98 @@ public class HoldingTorqueTests
         Assert.Contains("cannot move anything", error.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A four-bar linkage at rest: crank, coupler and rocker pinned in a
+    /// loop to two ground points. It has one degree of freedom, so its four
+    /// pins are redundant three times over.
+    /// </summary>
+    private static (PlanarSystem System, SystemState State) FourBar()
+    {
+        Vector2d[] corners = [new(0, 0), new(0.5, 0.9), new(1.8, 1.1), new(2.0, 0)];
+        var links = new PlanarLink[3];
+        string[] ids = ["crank", "coupler", "rocker"];
+        for (var i = 0; i < 3; i++)
+        {
+            links[i] = PlanarLink.SlenderBar(ids[i], mass: 0.5 + (0.3 * i), length: (corners[i + 1] - corners[i]).Length);
+        }
+
+        var system = new PlanarSystem(
+            links,
+            PlanarSystem.StandardGravity,
+            [
+                new PinJoint("base", Attachment.OnLink("crank", links[0].EndA), Attachment.Ground(corners[0])),
+                new PinJoint("knee", Attachment.OnLink("coupler", links[1].EndA), Attachment.OnLink("crank", links[0].EndB)),
+                new PinJoint("ankle", Attachment.OnLink("rocker", links[2].EndA), Attachment.OnLink("coupler", links[1].EndB)),
+                new PinJoint("toe", Attachment.OnLink("rocker", links[2].EndB), Attachment.Ground(corners[3])),
+            ]);
+        var state = system.CreateState();
+        for (var i = 0; i < 3; i++)
+        {
+            var span = corners[i + 1] - corners[i];
+            system.SetBody(state.Values, i, new Pose2d((corners[i] + corners[i + 1]) * 0.5, Math.Atan2(span.Y, span.X)), default);
+        }
+
+        return (system, state);
+    }
+
+    [Fact]
+    public void AnyOneFourBarPinHoldsItUniquely()
+    {
+        var (system, state) = FourBar();
+
+        foreach (var pin in new[] { "base", "knee", "ankle", "toe" })
+        {
+            var hold = system.SolveHoldingTorques(0, state.Values, [pin]);
+
+            Assert.Equal(0, hold.Redundancy);
+            Assert.True(Math.Abs(hold[pin]) > 0.1, $"Expected pin '{pin}' to carry load, got {hold[pin]} N·m.");
+            Assert.InRange(hold.MaxAngularAcceleration, 0.0, 1e-10);
+        }
+    }
+
+    [Fact]
+    public void RedundantPinsGetTheMinimumNormTorques()
+    {
+        // With one degree of freedom q, pin j turns at r_j·q̇ and the
+        // torques hold the linkage when Σ τ_j·r_j = Q. Pin j alone needs
+        // s_j = Q / r_j, and the smallest Σ τ² is τ_j = r_j·Q / Σ r², which
+        // is (1/s_j) / Σ (1/s_k)².
+        var (system, state) = FourBar();
+        string[] pins = ["base", "knee", "ankle", "toe"];
+        var single = pins.Select(p => system.SolveHoldingTorques(0, state.Values, [p])[p]).ToArray();
+        var sum = single.Sum(s => 1 / (s * s));
+
+        var hold = system.SolveHoldingTorques(0, state.Values, pins);
+
+        Assert.Equal(3, hold.Redundancy);
+        for (var j = 0; j < pins.Length; j++)
+        {
+            Assert.Equal(1 / single[j] / sum, hold[pins[j]], 10);
+        }
+
+        Assert.InRange(hold.MaxLinearAcceleration, 0.0, 1e-10);
+        Assert.InRange(hold.MaxAngularAcceleration, 0.0, 1e-10);
+    }
+
+    [Fact]
+    public void MinimumNormTorquesHoldTheFourBarInTheDynamics()
+    {
+        var (probe, probeState) = FourBar();
+        string[] pins = ["base", "knee", "ankle", "toe"];
+        var hold = probe.SolveHoldingTorques(0, probeState.Values, pins);
+        var (bare, state) = FourBar();
+        var system = new PlanarSystem(
+            bare.Links,
+            PlanarSystem.StandardGravity,
+            bare.Pins,
+            actuators: pins.Select(p => new JointActuator(p + "_motor", p, Schedule.Constant(hold[p]))).ToArray());
+        var start = system.GetPose(state.Values, 0).Angle;
+
+        FixedStepRunner.Run(state, new Rk4Integrator(), system.Evaluate, 1e-3, 1000);
+
+        Assert.InRange(Math.Abs(system.GetPose(state.Values, 0).Angle - start), 0.0, 1e-9);
+    }
+
     [Fact]
     public void RejectsUnknownAndRepeatedPins()
     {

@@ -453,11 +453,15 @@ public sealed class PlanarSystem : ISwitchedSystem
     /// are exact; otherwise the leftover acceleration is reported. Meant for
     /// a state at rest, where q̈ = 0 means the structure stays put; with
     /// velocities it also cancels the velocity terms for that instant.
+    ///
+    /// Redundant pins, as in a closed loop with every joint actuated, have
+    /// many torque sets that give the same acceleration, and Gᵀ·M·G is
+    /// singular. Then the torques are the set with the smallest Σ τ², the
+    /// pseudo-inverse solution, and <see cref="HoldingTorques.Redundancy"/>
+    /// says how many torque combinations do nothing.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// A pin's torque moves nothing (the structure is rigid there), or the
-    /// pins are redundant: more than one set of torques gives the same
-    /// acceleration, so there is no single answer.
+    /// A pin's torque moves nothing (the structure is rigid there).
     /// </exception>
     public HoldingTorques SolveHoldingTorques(double time, ReadOnlySpan<double> state, IReadOnlyList<string> pinIds)
     {
@@ -521,15 +525,20 @@ public sealed class PlanarSystem : ISwitchedSystem
             }
         }
 
+        var redundancy = 0;
         if (m > 0)
         {
-            if (!DenseCholesky.TryFactor(normal, m))
+            // Cholesky needs the lower triangle only and overwrites it, so
+            // keep a copy for the redundant case.
+            var copy = normal.ToArray();
+            if (DenseCholesky.TryFactor(normal, m))
             {
-                throw new InvalidOperationException(
-                    $"The pins {string.Join(", ", pinIds)} are redundant at this state: their torques cannot be told apart.");
+                DenseCholesky.Solve(normal, m, torques);
             }
-
-            DenseCholesky.Solve(normal, m, torques);
+            else
+            {
+                redundancy = m - SymmetricEigen.SolveMinimumNorm(copy, m, torques);
+            }
         }
 
         double maxLinear = 0, maxAngular = 0;
@@ -550,7 +559,7 @@ public sealed class PlanarSystem : ISwitchedSystem
             maxAngular = Math.Max(maxAngular, Math.Abs(a[2]));
         }
 
-        return new HoldingTorques(pinIds.ToArray(), torques, maxLinear, maxAngular);
+        return new HoldingTorques(pinIds.ToArray(), torques, maxLinear, maxAngular, redundancy);
     }
 
     /// <summary>Largest pin position error |C| over all pins, m. Zero with no pins.</summary>
