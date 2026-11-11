@@ -26,8 +26,6 @@ internal static class PerturbationFlags
 {
     public static readonly string[] Names = ["impulse", "force", "ground-drop"];
 
-    public static readonly string[] Repeatable = ["impulse", "force"];
-
     /// <summary>Adds the perturbation flags in <paramref name="options"/> to <paramref name="document"/>.</summary>
     /// <exception cref="CliApp.UsageException">A flag is malformed or names something the topology lacks.</exception>
     public static void Apply(TopologyDocument document, CliApp.Options options)

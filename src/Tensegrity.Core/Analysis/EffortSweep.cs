@@ -131,10 +131,14 @@ public static class EffortSweep
         return points;
     }
 
-    /// <summary>An independent copy of the document with every link at rest, so the caller's document is untouched.</summary>
-    private static TopologyDocument AtRest(TopologyDocument document)
+    /// <summary>An independent copy of the document, so the caller's document is untouched.</summary>
+    internal static TopologyDocument Copy(TopologyDocument document) =>
+        JsonSerializer.Deserialize<TopologyDocument>(RunFiles.SerializeTopology(document), RunFiles.Json)!;
+
+    /// <summary>An independent copy of the document with every link at rest.</summary>
+    internal static TopologyDocument AtRest(TopologyDocument document)
     {
-        var copy = JsonSerializer.Deserialize<TopologyDocument>(RunFiles.SerializeTopology(document), RunFiles.Json)!;
+        var copy = Copy(document);
         foreach (var link in copy.Links)
         {
             link.Twist = new TwistDocument();
@@ -143,7 +147,8 @@ public static class EffortSweep
         return copy;
     }
 
-    private static (double[] Tensions, HoldingTorques Hold) Solve(TopologyDocument document, IReadOnlyList<string> pinIds)
+    /// <summary>Every cable's tension, and the holding torques at <paramref name="pinIds"/>, in the document's initial state.</summary>
+    internal static (double[] Tensions, HoldingTorques Hold) Solve(TopologyDocument document, IReadOnlyList<string> pinIds)
     {
         var (system, state) = TopologyMapping.FromDocument(document);
         var tensions = new double[system.Cables.Count];
@@ -210,7 +215,8 @@ public static class EffortSweep
     private static double Angle(TopologyDocument document, AttachmentDocument end) =>
         end.IsGround ? 0 : Link(document, end.Link!).Pose.Theta;
 
-    private static (double X, double Y) WorldPoint(TopologyDocument document, AttachmentDocument end)
+    /// <summary>Where an attachment is in the document's initial pose, world frame.</summary>
+    internal static (double X, double Y) WorldPoint(TopologyDocument document, AttachmentDocument end)
     {
         if (end.IsGround)
         {

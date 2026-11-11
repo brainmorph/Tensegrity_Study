@@ -192,6 +192,64 @@ public sealed class CliTests : IDisposable
     }
 
     [Fact]
+    public void SweepReportsLockedAndCollapsedConfigurationsAndTheBoundary()
+    {
+        // The arm's elbow tendon folds at 1.082; released from straight, 1.0 holds and 1.2 collapses within half a second.
+        var exit = Cli("sweep", "--topology", Topology("locking_arm"), "--vary", "rest:elbow_tendon=1.0,1.2", "--duration", "0.5", "--csv", Path.Combine(root, "sweep.csv"));
+
+        Assert.Equal(CliApp.Success, exit);
+        var text = stdout.ToString();
+        var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Contains(lines, l => l.StartsWith("| rest:elbow_tendon | outcome | max change (deg) | final change (deg) | collapse (s) | shoulder (N m) | elbow (N m) |", StringComparison.Ordinal));
+        Assert.Contains(lines, l => l.StartsWith("| 1 | locked |", StringComparison.Ordinal));
+        Assert.Contains(lines, l => l.StartsWith("| 1.2 | collapsed (elbow) |", StringComparison.Ordinal));
+        Assert.Contains("locked 1 of 2.", text, StringComparison.Ordinal);
+        Assert.Contains("collapses between 1 and 1.2.", text, StringComparison.Ordinal);
+
+        var csv = File.ReadAllLines(Path.Combine(root, "sweep.csv"));
+        Assert.Equal(3, csv.Length);
+        Assert.StartsWith("rest:elbow_tendon,locked,max_change_rad,final_change_rad,collapse_time_s,collapsed_joint,tension.shoulder_tendon,tension.elbow_tendon,torque.shoulder,torque.elbow,", csv[0], StringComparison.Ordinal);
+        Assert.StartsWith("1,1,", csv[1], StringComparison.Ordinal);
+        Assert.Contains(",elbow,", csv[2], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ATwoAxisSweepPrintsAMap()
+    {
+        var exit = Cli("sweep", "--topology", Topology("locking_arm"), "--duration", "0.01",
+            "--vary", "anchor:elbow_tendon.a.y=-0.01:0.01:3", "--vary", "rest:elbow_tendon=1.0,1.01");
+
+        Assert.Equal(CliApp.Success, exit);
+        var text = stdout.ToString();
+        Assert.Contains("rows anchor:elbow_tendon.a.y, columns rest:elbow_tendon; L locked, x collapsed.", text, StringComparison.Ordinal);
+        Assert.Contains("columns: 1, 1.01", text, StringComparison.Ordinal);
+        Assert.Contains("-0.01 | L L", text, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("--vary", "rest:elbow_tendon")] // No values.
+    [InlineData("--vary", "length:elbow_tendon=1,2")] // Unknown parameter.
+    [InlineData("--vary", "rest:elbow_tendon=1:2:x")] // Bad range.
+    [InlineData("--collapse-angle", "0")]
+    public void BadSweepsAreUsageErrors(string flag, string value)
+    {
+        var args = flag == "--vary"
+            ? new[] { "sweep", "--topology", Topology("locking_arm"), flag, value }
+            : ["sweep", "--topology", Topology("locking_arm"), "--vary", "rest:elbow_tendon=1", flag, value];
+
+        Assert.Equal(CliApp.Usage, Cli(args));
+    }
+
+    [Fact]
+    public void SweepNeedsOneOrTwoAxes()
+    {
+        Assert.Equal(CliApp.Usage, Cli("sweep", "--topology", Topology("locking_arm")));
+        Assert.Equal(CliApp.Usage, Cli("sweep", "--topology", Topology("locking_arm"),
+            "--vary", "rest:elbow_tendon=1", "--vary", "rest:shoulder_tendon=1", "--vary", "anchor:elbow_tendon.a.x=0"));
+        Assert.Equal(CliApp.Failure, Cli("sweep", "--topology", Topology("locking_arm"), "--vary", "rest:wrist_tendon=1", "--duration", "0.01"));
+    }
+
+    [Fact]
     public void RunRefusesToOverwriteAnExistingRun()
     {
         Assert.Equal(CliApp.Success, Cli("run", "--topology", Topology("pendulum"), "--duration", "0.01", "--out", Dir("run")));
