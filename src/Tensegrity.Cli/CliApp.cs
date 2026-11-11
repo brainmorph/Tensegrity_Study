@@ -34,10 +34,13 @@ public sealed class CliApp
               Run at dt, dt/2, dt/4, ... and print how much each halving changes
               the trajectory (test 14). --dt is the coarsest step (default 4x the
               file's dt); --levels defaults to 5.
-          effort --topology FILE --cable ID [--pins A,B] [--from X] [--to X] [--steps N]
-              Holding torque at the pins (default all) that keeps the file's
-              initial pose still, as the cable's rest length is scaled from
-              --from to --to (default 0.95 to 1.05) in N steps (default 11).
+          effort --topology FILE (--cable ID | --bend PIN) [--pins A,B] [--from X] [--to X] [--steps N]
+              Holding torque at the pins (default all) that keeps a pose still,
+              in N steps (default 11). With --cable, the file's initial pose as
+              the cable's rest length is scaled from --from to --to (default
+              0.95 to 1.05). With --bend, the pose bent at that pin by --from
+              to --to degrees (default -10 to 10), turning its outer side.
+              Redundant pins get the torques with the smallest sum of squares.
           export-csv RUN_DIR [--out FILE]
               Write a run's frames as CSV, one row per frame (default
               RUN_DIR/frames.csv).
@@ -177,36 +180,73 @@ public sealed class CliApp
 
     private int EffortCommand(Options options)
     {
-        options.Allow("topology", "cable", "pins", "from", "to", "steps");
+        options.Allow("topology", "cable", "bend", "pins", "from", "to", "steps");
         var topologyPath = options.Required("topology");
-        var cable = options.Required("cable");
-        var from = options.Double("from") ?? 0.95;
-        var to = options.Double("to") ?? 1.05;
-        var steps = options.Int("steps") ?? 11;
-        if (steps < 2 || !(from > 0) || !(to > from))
+        var cable = options.Value("cable");
+        var bend = options.Value("bend");
+        if ((cable is null) == (bend is null))
         {
-            throw new UsageException("effort needs 0 < --from < --to and --steps of at least 2.");
+            throw new UsageException("effort needs exactly one of --cable and --bend.");
+        }
+
+        var from = options.Double("from") ?? (cable is null ? -10 : 0.95);
+        var to = options.Double("to") ?? (cable is null ? 10 : 1.05);
+        var steps = options.Int("steps") ?? 11;
+        if (steps < 2 || !(to > from) || (cable is not null && !(from > 0)))
+        {
+            throw new UsageException("effort needs --from < --to (and 0 < --from with --cable) and --steps of at least 2.");
         }
 
         var document = RunFiles.ReadTopology(topologyPath);
         var pins = options.Value("pins")?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             ?? document.Pins.Select(p => p.Id).ToArray();
-        var scales = Enumerable.Range(0, steps).Select(i => from + ((to - from) * i / (steps - 1)));
-        var points = EffortSweep.Run(document, cable, pins, scales);
+        var values = Enumerable.Range(0, steps).Select(i => from + ((to - from) * i / (steps - 1))).ToArray();
+        var pinColumns = string.Join(" | ", pins.Select(p => $"{p} (N m)"));
+        var redundancy = 0;
 
-        stdout.WriteLine($"effort: {document.Name}, cable {cable} scaled, holding torque in the initial pose");
-        stdout.WriteLine();
-        stdout.WriteLine($"| scale | rest length (m) | tension (N) | {string.Join(" | ", pins.Select(p => $"{p} (N m)"))} | unheld accel |");
-        stdout.WriteLine($"|---|---|---|{string.Concat(pins.Select(_ => "---|"))}---|");
-        foreach (var point in points)
+        if (cable is not null)
         {
-            var torques = string.Join(" | ", point.Torques.Select(t => (Math.Round(t, 4) + 0.0).ToString("F4", CultureInfo.InvariantCulture)));
-            var unheld = Math.Max(point.MaxLinearAcceleration, point.MaxAngularAcceleration);
-            stdout.WriteLine(string.Create(CultureInfo.InvariantCulture,
-                $"| {point.Scale:F4} | {point.RestLength:F6} | {point.Tension:F3} | {torques} | {unheld:E1} |"));
+            var points = EffortSweep.Run(document, cable, pins, values);
+            stdout.WriteLine($"effort: {document.Name}, cable {cable} scaled, holding torque in the initial pose");
+            stdout.WriteLine();
+            stdout.WriteLine($"| scale | rest length (m) | tension (N) | {pinColumns} | unheld accel |");
+            stdout.WriteLine($"|---|---|---|{string.Concat(pins.Select(_ => "---|"))}---|");
+            foreach (var point in points)
+            {
+                var unheld = Math.Max(point.MaxLinearAcceleration, point.MaxAngularAcceleration);
+                stdout.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                    $"| {point.Scale:F4} | {point.RestLength:F6} | {point.Tension:F3} | {Torques(point.Torques)} | {unheld:E1} |"));
+                redundancy = Math.Max(redundancy, point.Redundancy);
+            }
+        }
+        else
+        {
+            var points = EffortSweep.Bend(document, bend!, pins, values.Select(v => v * Math.PI / 180));
+            var cableColumns = string.Join(" | ", document.Cables.Select(c => $"{c.Id} (N)"));
+            stdout.WriteLine($"effort: {document.Name}, pin {bend} bent, holding torque in the bent pose");
+            stdout.WriteLine();
+            stdout.WriteLine($"| bend (deg) | joint angle (deg) | {cableColumns} | {pinColumns} | unheld accel |");
+            stdout.WriteLine($"|---|---|{string.Concat(document.Cables.Select(_ => "---|"))}{string.Concat(pins.Select(_ => "---|"))}---|");
+            foreach (var point in points)
+            {
+                var tensions = string.Join(" | ", point.Tensions.Select(t => t.ToString("F3", CultureInfo.InvariantCulture)));
+                var unheld = Math.Max(point.MaxLinearAcceleration, point.MaxAngularAcceleration);
+                stdout.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                    $"| {point.Offset * 180 / Math.PI:F3} | {point.JointAngle * 180 / Math.PI:F3} | {tensions} | {Torques(point.Torques)} | {unheld:E1} |"));
+                redundancy = Math.Max(redundancy, point.Redundancy);
+            }
+        }
+
+        if (redundancy > 0)
+        {
+            stdout.WriteLine();
+            stdout.WriteLine($"The pins are redundant ({redundancy} torque combinations move nothing): torques are the set with the smallest sum of squares.");
         }
 
         return Success;
+
+        static string Torques(IEnumerable<double> torques) =>
+            string.Join(" | ", torques.Select(t => (Math.Round(t, 4) + 0.0).ToString("F4", CultureInfo.InvariantCulture)));
     }
 
     private int ExportCsvCommand(Options options)

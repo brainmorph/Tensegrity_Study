@@ -68,7 +68,28 @@ public sealed class CliTests : IDisposable
     public void EffortRejectsABadRange()
     {
         Assert.Equal(CliApp.Usage, Cli("effort", "--topology", Topology("locking_arm"), "--cable", "elbow_tendon", "--from", "1.1", "--to", "1.0"));
+        Assert.Equal(CliApp.Usage, Cli("effort", "--topology", Topology("locking_arm"), "--cable", "elbow_tendon", "--from", "-0.1", "--to", "1.0"));
         Assert.Equal(CliApp.Failure, Cli("effort", "--topology", Topology("locking_arm"), "--cable", "nope"));
+    }
+
+    [Fact]
+    public void EffortNeedsExactlyOneOfCableAndBend()
+    {
+        Assert.Equal(CliApp.Usage, Cli("effort", "--topology", Topology("locking_arm")));
+        Assert.Equal(CliApp.Usage, Cli("effort", "--topology", Topology("locking_arm"), "--cable", "elbow_tendon", "--bend", "elbow"));
+    }
+
+    [Fact]
+    public void EffortBendPrintsTensionsAndTorquesAgainstJointAngle()
+    {
+        var exit = Cli("effort", "--topology", Topology("locking_arm"), "--bend", "elbow", "--from", "-2", "--to", "2", "--steps", "3");
+
+        Assert.Equal(CliApp.Success, exit);
+        var lines = stdout.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Contains(lines, l => l.StartsWith("| bend (deg) | joint angle (deg) | shoulder_tendon (N) | elbow_tendon (N) | shoulder (N m) | elbow (N m) |", StringComparison.Ordinal));
+        Assert.Contains(lines, l => l.StartsWith("| 0.000 | 0.000 | ", StringComparison.Ordinal) && l.Contains("| 0.0000 | 0.0000 |", StringComparison.Ordinal));
+        Assert.Equal(3, lines.Count(l => l.StartsWith("| -2.000 |", StringComparison.Ordinal) || l.StartsWith("| 0.000 |", StringComparison.Ordinal) || l.StartsWith("| 2.000 |", StringComparison.Ordinal)));
+        Assert.Equal(CliApp.Failure, Cli("effort", "--topology", Topology("locking_arm"), "--bend", "wrist"));
     }
 
     [Fact]
