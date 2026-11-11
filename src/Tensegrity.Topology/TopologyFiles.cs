@@ -11,9 +11,15 @@ namespace Tensegrity.Topology;
 /// </summary>
 public static class TopologyFiles
 {
-    public static PlanarModel Load(string path)
+    /// <summary>
+    /// Loads a topology file, letting <paramref name="edit"/> change the
+    /// document first (for example to add perturbations). Errors in the
+    /// edited document are reported against <paramref name="path"/>.
+    /// </summary>
+    public static PlanarModel Load(string path, Action<TopologyDocument>? edit = null)
     {
         var document = RunFiles.ReadTopology(path);
+        edit?.Invoke(document);
         try
         {
             return FromDocument(document);

@@ -25,12 +25,12 @@ public sealed class CliApp
         usage: tensegrity <command> [options]
 
         commands:
-          run --topology FILE [--seed N] [--out DIR] [--dt S] [--duration S] [--frame-stride N]
+          run --topology FILE [--seed N] [--out DIR] [--dt S] [--duration S] [--frame-stride N] [PERTURBATIONS]
               Simulate a topology file and write a run directory (manifest.json,
               frames.bin). dt, duration and frame stride default to the file's
               "simulation" block. --out defaults to runs/<date>_<name>_seed<N>.
               Exit code 3 means the run was written but a strut went into tension.
-          dt-study --topology FILE [--dt S] [--duration S] [--levels N]
+          dt-study --topology FILE [--dt S] [--duration S] [--levels N] [PERTURBATIONS]
               Run at dt, dt/2, dt/4, ... and print how much each halving changes
               the trajectory (test 14). --dt is the coarsest step (default 4x the
               file's dt); --levels defaults to 5.
@@ -46,6 +46,17 @@ public sealed class CliApp
               RUN_DIR/frames.csv).
           export-topologies [--out DIR]
               Write the reference topologies as JSON files (default topologies/).
+
+        perturbations, added to the topology for this run only (forces in the
+        world frame, points in the link's body frame; --impulse and --force
+        may be repeated):
+          --impulse LINK,X,Y,JX,JY,START,DURATION
+              A triangular force pulse delivering (JX, JY) N s.
+          --force LINK,X,Y,T,FX,FY[,T,FX,FY...]
+              A force piecewise-linear through the (T, FX, FY) breakpoints,
+              held before the first and after the last.
+          --ground-drop START,DURATION,DEPTH
+              The ground line falls DEPTH m over DURATION s from START.
         """;
 
     private readonly TextWriter stdout;
@@ -97,7 +108,7 @@ public sealed class CliApp
 
     private int RunCommand(Options options)
     {
-        options.Allow("topology", "seed", "out", "dt", "duration", "frame-stride");
+        options.Allow(["topology", "seed", "out", "dt", "duration", "frame-stride", .. PerturbationFlags.Names]);
         var topologyPath = options.Required("topology");
 
         // Check every option before touching any file.
@@ -106,7 +117,7 @@ public sealed class CliApp
         var strideOption = options.Int("frame-stride");
         var seed = options.Long("seed") ?? 0;
 
-        var model = TopologyFiles.Load(topologyPath);
+        var model = TopologyFiles.Load(topologyPath, document => PerturbationFlags.Apply(document, options));
         var simulation = model.Simulation ?? new SimulationDocument();
         var dt = dtOption ?? simulation.Dt;
         var duration = durationOption ?? simulation.Duration;
@@ -147,13 +158,13 @@ public sealed class CliApp
 
     private int DtStudyCommand(Options options)
     {
-        options.Allow("topology", "dt", "duration", "levels");
+        options.Allow(["topology", "dt", "duration", "levels", .. PerturbationFlags.Names]);
         var topologyPath = options.Required("topology");
         var dtOption = options.Double("dt");
         var durationOption = options.Double("duration");
         var levels = options.Int("levels") ?? 5;
 
-        var model = TopologyFiles.Load(topologyPath);
+        var model = TopologyFiles.Load(topologyPath, document => PerturbationFlags.Apply(document, options));
         var simulation = model.Simulation ?? new SimulationDocument();
         var coarsest = dtOption ?? (4 * simulation.Dt);
         var duration = durationOption ?? simulation.Duration;
@@ -331,12 +342,15 @@ public sealed class CliApp
         }
     }
 
-    private sealed class UsageException(string message) : Exception(message);
+    internal sealed class UsageException(string message) : Exception(message);
 
-    /// <summary><c>--name value</c> options and positional arguments.</summary>
-    private sealed class Options
+    /// <summary>
+    /// <c>--name value</c> options and positional arguments. An option may be
+    /// given more than once only if it is read with <see cref="All"/>.
+    /// </summary>
+    internal sealed class Options
     {
-        private readonly Dictionary<string, string> values = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, List<string>> values = new(StringComparer.Ordinal);
 
         public List<string> Positional { get; } = [];
 
@@ -359,15 +373,18 @@ public sealed class CliApp
                     throw new UsageException($"option --{name} needs a value.");
                 }
 
-                if (!options.values.TryAdd(name, e.Current))
+                if (!options.values.TryGetValue(name, out var list))
                 {
-                    throw new UsageException($"option --{name} given twice.");
+                    options.values[name] = list = [];
                 }
+
+                list.Add(e.Current);
             }
 
             return options;
         }
 
+        /// <summary>Rejects options not in <paramref name="names"/>, and repeats of any not in <paramref name="repeatable"/>.</summary>
         public void Allow(params string[] names)
         {
             var unknown = values.Keys.FirstOrDefault(k => !names.Contains(k));
@@ -375,9 +392,18 @@ public sealed class CliApp
             {
                 throw new UsageException($"unknown option --{unknown}.");
             }
+
+            var repeated = values.FirstOrDefault(v => v.Value.Count > 1 && !PerturbationFlags.Repeatable.Contains(v.Key)).Key;
+            if (repeated is not null)
+            {
+                throw new UsageException($"option --{repeated} given twice.");
+            }
         }
 
-        public string? Value(string name) => values.GetValueOrDefault(name);
+        /// <summary>Every value given for <paramref name="name"/>, in order.</summary>
+        public IReadOnlyList<string> All(string name) => values.TryGetValue(name, out var list) ? list : [];
+
+        public string? Value(string name) => values.TryGetValue(name, out var list) ? list[^1] : null;
 
         public string Required(string name) => Value(name) ?? throw new UsageException($"missing --{name}.");
 

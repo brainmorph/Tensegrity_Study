@@ -92,6 +92,105 @@ public sealed class CliTests : IDisposable
         Assert.Equal(CliApp.Failure, Cli("effort", "--topology", Topology("locking_arm"), "--bend", "wrist"));
     }
 
+    /// <summary>The perturbed_bar topology with its knock removed, so flags can put it back.</summary>
+    private string UnknockedBar()
+    {
+        var document = RunFiles.ReadTopology(Topology("perturbed_bar"));
+        document.Loads = null;
+        var path = Path.Combine(root, "unknocked_bar.json");
+        File.WriteAllText(path, RunFiles.SerializeTopology(document));
+        return path;
+    }
+
+    /// <summary>Same frames, channel for channel, with the flag's load standing in for the file's knock.</summary>
+    private static void AssertSameFrames(string expected, string actual, string loadId, double tolerance)
+    {
+        var a = RunReader.Open(expected);
+        var b = RunReader.Open(actual);
+        Assert.Equal(a.Channels, b.Channels.Select(c => c.Replace($"load.{loadId}.", "load.knock.", StringComparison.Ordinal)));
+        Assert.Equal(a.FrameCount, b.FrameCount);
+        for (var f = 0; f < a.FrameCount; f++)
+        {
+            var fa = a.Frame(f);
+            var fb = b.Frame(f);
+            for (var c = 0; c < fa.Length; c++)
+            {
+                Assert.True(Math.Abs(fa[c] - fb[c]) <= tolerance, $"Frame {f}, {a.Channels[c]}: {fa[c]} vs {fb[c]}.");
+            }
+        }
+    }
+
+    [Fact]
+    public void ForceFlagReproducesALoadFromTheFileExactly()
+    {
+        Assert.Equal(CliApp.Success, Cli("run", "--topology", Topology("perturbed_bar"), "--duration", "0.8", "--out", Dir("file")));
+
+        var exit = Cli("run", "--topology", UnknockedBar(), "--duration", "0.8", "--out", Dir("flag"),
+            "--force", "bar,0.5,0,0.5,0,0,0.5025,120,240,0.505,0,0");
+
+        Assert.Equal(CliApp.Success, exit);
+        var load = Assert.Single(RunReader.Open(Dir("flag")).Manifest.Topology.Loads!);
+        Assert.Equal("cli_force_1", load.Id);
+        AssertSameFrames(Dir("file"), Dir("flag"), "cli_force_1", 0);
+    }
+
+    [Fact]
+    public void ImpulseFlagIsATriangularPulse()
+    {
+        Assert.Equal(CliApp.Success, Cli("run", "--topology", Topology("perturbed_bar"), "--duration", "0.8", "--out", Dir("file")));
+
+        // The file's knock: peak (120, 240) N over 5 ms is (0.3, 0.6) N·s.
+        var exit = Cli("run", "--topology", UnknockedBar(), "--duration", "0.8", "--out", Dir("flag"),
+            "--impulse", "bar,0.5,0,0.3,0.6,0.5,0.005");
+
+        Assert.Equal(CliApp.Success, exit);
+        var load = Assert.Single(RunReader.Open(Dir("flag")).Manifest.Topology.Loads!);
+        Assert.Equal("cli_impulse_1", load.Id);
+        Assert.Equal([0.5, 0.5025, 0.505], load.Schedule.Select(p => p.Time).ToArray(), (x, y) => Math.Abs(x - y) < 1e-15);
+        Assert.Equal(120, load.Schedule[1].Fx, 12);
+        Assert.Equal(240, load.Schedule[1].Fy, 12);
+        AssertSameFrames(Dir("file"), Dir("flag"), "cli_impulse_1", 1e-9);
+    }
+
+    [Fact]
+    public void PerturbationFlagsAddToTheFileAndRepeat()
+    {
+        var exit = Cli("run", "--topology", Topology("perturbed_bar"), "--duration", "0.01", "--out", Dir("run"),
+            "--force", "bar,0,0,0,0,-1", "--force", "bar,-0.5,0,0,1,0,1,0,0", "--impulse", "bar,0.5,0,0,1,0,0.01");
+
+        Assert.Equal(CliApp.Success, exit);
+        var ids = RunReader.Open(Dir("run")).Manifest.Topology.Loads!.Select(l => l.Id);
+        Assert.Equal(["knock", "cli_impulse_1", "cli_force_1", "cli_force_2"], ids);
+    }
+
+    [Fact]
+    public void GroundDropFlagLowersTheGroundLine()
+    {
+        var exit = Cli("run", "--topology", Topology("ground_drop"), "--duration", "0.01", "--out", Dir("run"), "--ground-drop", "0.2,0.1,0.05");
+
+        Assert.Equal(CliApp.Success, exit);
+        var ground = RunReader.Open(Dir("run")).Manifest.Topology.Ground!;
+        Assert.Equal([0.2, 0.2 + 0.1], ground.HeightSchedule!.Select(p => p.Time));
+        Assert.Equal([ground.Height, ground.Height - 0.05], ground.HeightSchedule!.Select(p => p.Height));
+    }
+
+    [Theory]
+    [InlineData("--impulse", "wing,0,0,1,0,0,0.01")] // No such link.
+    [InlineData("--impulse", "bar,0,0,1,0,0")] // Missing duration.
+    [InlineData("--impulse", "bar,0,0,1,0,0,0")] // Zero duration.
+    [InlineData("--force", "bar,0,0,0,1")] // Incomplete breakpoint.
+    [InlineData("--force", "bar,0,0,1,0,0,1,0,0")] // Times not increasing.
+    [InlineData("--force", "bar,0,zero,0,0,1")] // Not a number.
+    [InlineData("--ground-drop", "0,0.1,0.05")] // perturbed_bar has no ground.
+    [InlineData("--dt", "0.001")] // Not repeatable (given twice below).
+    public void BadPerturbationFlagsAreUsageErrors(string flag, string value)
+    {
+        var exit = Cli("run", "--topology", Topology("perturbed_bar"), "--dt", "0.001", "--out", Dir("run"), flag, value);
+
+        Assert.Equal(CliApp.Usage, exit);
+        Assert.False(Directory.Exists(Dir("run")));
+    }
+
     [Fact]
     public void RunRefusesToOverwriteAnExistingRun()
     {
