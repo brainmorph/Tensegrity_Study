@@ -282,6 +282,17 @@ Completed milestones are struck through, with the commit that finished them. Any
 - Stage B: 3D rigid bodies, same topologies extended to 3D.
 - Export a single run to a standalone video/GIF.
 
+### M8 — Snap latches (2D)
+Comes before M7's optional work. The locks so far are tendon tension against gravity: one stable shape per joint. A snap latch has **two** stable shapes with an energy barrier between them, each held with zero actuator torque, so a brief push switches the shape and nothing has to hold it afterwards (the bird wing and the sail of Section 1). Order: the two-link toggle first, then the four-bar.
+
+- **Two-link toggle (`ToggleArm`).** The locking arm's links with an **over-center elbow tendon** and two elbow stops: hyperextension at 0° (straight) and a fold stop a short way down. The tendon's length peaks at the angle φ\* where its line passes through the pin. On either side of φ\* it pulls the joint away from φ\*, into the stop on that side. Those are the two poles: extended and folded.
+  - **Design found by a quasi-static scan** (scratch C# prototype, upper link held fixed, lower link of `LockingArmGeometry`): fold stop at −60°, EA 1000 N, post 50 mm behind and 30 mm above the elbow, insertion 150 mm out and 30 mm above the lower link's axis, 20 N tension at straight. Result: φ\* = −39.5°, peak strain 7.8% (77 N). The straight pole presses its stop with 0.39 N·m and has a 415 mJ barrier. The folded pole presses with 0.98 N·m and has a 189 mJ barrier, which is lower because gravity helps the fold. The 415 mJ barrier is about the energy the `locking_wing` gust (0.2 N·s at the tip) puts into the lower link, so the existing perturbations sit near the threshold.
+  - **Geometric limit:** with the tendon's ends at distances a and b from the pin, its stretch from straight to φ\* is about a·b·Δ²/(2(a+b)²), where Δ = |φ\*|. That is at most Δ²/8. A realistic tendon (≤ 8%) therefore only latches over a short travel (Δ ≲ 45°). The −150° fold of `LockingArm` cannot be one pole of a toggle: the scan found no design with a wide swing under 10% strain.
+  - Still to check in the simulator: the shoulder. Its tendon is designed for the straight pole, and folding the elbow lowers the moment about the shoulder.
+  - **Tests.** A statics prediction independent of the simulator gives φ\*, both poles and both barriers (like test 10). The simulator holds each pole with zero torque. A kick just under the barrier energy returns to the same pole, and one just over it flips the joint to the other pole.
+- **Four-bar toggle clamp.** Ground, input link, coupler and output link, latching when the coupler and output link line up against a stop. This needs a four-bar statics prediction.
+- **Latch strength.** The smallest impulse that unlatches each design (`--impulse`), swept against geometry with `sweep`, with results in `topologies/README.md` and a regression baseline per reference topology.
+
 ## 9. Open questions
 
 1. **Constraint method — DECIDED: Lagrange multipliers + stabilization.** Each RK4 stage solves a small linear system for constraint forces. Alternatives considered: penalty joints (simpler, but adds artificial compliance that blurs the locking threshold) and reduced coordinates (exact for open chains, but hard for the closed loops in the planar tensegrity).
