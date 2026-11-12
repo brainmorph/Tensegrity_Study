@@ -1,0 +1,51 @@
+{
+  // Hand-written (PLAN.md 7a), following locking_wing: the run is
+  // deterministic, so poses use 1e-10, and tendon stiffness magnifies a
+  // pose change into tensions and reactions of up to ~1e-6 N.
+  "time": { "absolute": 1e-12, "relative": 0 },
+  "upper_x": { "absolute": 1e-10, "relative": 0 },
+  "upper_y": { "absolute": 1e-10, "relative": 0 },
+  "upper_theta": { "absolute": 1e-10, "relative": 0 },
+  "lower_x": { "absolute": 1e-10, "relative": 0 },
+  "lower_y": { "absolute": 1e-10, "relative": 0 },
+  "lower_theta": { "absolute": 1e-10, "relative": 0 },
+  "tension_shoulder_tendon": { "absolute": 1e-6, "relative": 1e-9 },
+  "tension_elbow_tendon": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_shoulder_x": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_shoulder_y": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_elbow_x": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_elbow_y": { "absolute": 1e-6, "relative": 1e-9 },
+  "kinetic_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "potential_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "elastic_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "dissipated_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  // Work done by the elbow twitch, J.
+  "actuator_work": { "absolute": 1e-10, "relative": 1e-10 },
+  // Worst |E_total(t) - E_total(0)|, J. Measured 1.1e-9 here; the
+  // toggle_arm_snap dt study shows it falling 16x per dt halving.
+  "max_energy_balance_error": { "absolute": 5e-11, "relative": 0 },
+  "max_pin_residual": { "absolute": 1e-13, "relative": 0 },
+  // Run-wide extremes of the elbow angle (rad) and its stop torque (N m),
+  // checked at every step. The elbow starts on its straight stop, leaves
+  // it under the twitch, and comes back to it.
+  "min_joint_angle_elbow": { "absolute": 1e-10, "relative": 0 },
+  "max_joint_angle_elbow": { "absolute": 1e-10, "relative": 0 },
+  "max_limit_torque_elbow": { "absolute": 1e-8, "relative": 1e-9 },
+  // Twitch breakpoints, tendon slack/taut and stop contact switches.
+  "event_count": { "absolute": 0, "relative": 0 },
+  "unresolved_steps": { "absolute": 0, "relative": 0 },
+  // Holding torque at the straight pole, N m: zero by construction.
+  "holding_torque_shoulder": { "absolute": 1e-12, "relative": 0 },
+  "holding_torque_elbow": { "absolute": 1e-12, "relative": 0 },
+  // Torque the straight stop puts on the lower link there, N m: minus the
+  // elbow tendon's press, by construction.
+  "straight_stop_torque": { "absolute": 1e-12, "relative": 0 },
+  // ChainStatics predictions: the folded pole (upper link world angle and
+  // elbow angle, rad), the saddle's elbow angle (rad), and the barrier
+  // above each pole (J). Newton and golden-section solves to ~1e-10.
+  "folded_pole_upper": { "absolute": 1e-9, "relative": 0 },
+  "folded_pole_elbow": { "absolute": 1e-9, "relative": 0 },
+  "barrier_elbow": { "absolute": 1e-7, "relative": 0 },
+  "barrier_from_straight": { "absolute": 1e-9, "relative": 0 },
+  "barrier_from_folded": { "absolute": 1e-9, "relative": 0 }
+}

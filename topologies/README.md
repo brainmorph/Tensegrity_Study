@@ -16,7 +16,7 @@ dotnet run --project src/Tensegrity.Cli -- run --topology topologies/locking_arm
 
 ## Reference files
 
-These seven files are generated, not hand-edited. They come from `ReferenceTopologies` in `src/Tensegrity.Topology`. Regenerate them with:
+These files are generated, not hand-edited. They come from `ReferenceTopologies` in `src/Tensegrity.Topology`. Regenerate them with:
 
 ```
 dotnet run --project src/Tensegrity.Cli -- export-topologies
@@ -37,6 +37,8 @@ Tests hold each file equal to the catalog, and each catalog entry bit-identical 
 | `locking_wing.json` | The three-link wing (a hand added at the wrist), each joint held straight out by one tendon. A downward gust at the wingtip bends the wrist 23°, two thirds of the way to its fold; on the rebound the hand flicks up 52° with its tendon slack. The lock holds. |
 | `locking_wing_collapse.json` | The same wing with its wrist tendon 8% too long, past the 6.3% threshold. Released from straight out, the hand collapses and swings from the wrist. |
 | `locking_wing_preloaded.json` | The same wing with stops against bending upward at the elbow and wrist, its tendons shortened to press each joint into its stop with about the joint's own gravity moment. The same gust bends the wrist 23° as before but the elbow only 6° (10° without), and the stops catch the rebound at +1.4° and +0.8°. The lock holds. |
+| `toggle_arm.json` | A snap latch (M8): the two-link arm with an over-center elbow tendon that pulls the elbow into a stop at straight or into a fold stop at −60°, with an energy barrier between the two. Latched straight, it gets a 20 ms folding twitch across the elbow 6% under what snaps it. The elbow bends to −30° and returns to straight. |
+| `toggle_arm_snap.json` | The same toggle arm. A folding twitch 7% over the threshold snaps the elbow into its fold stop, where it stays with no torque. An extending twitch at 0.55 s snaps it back to straight. |
 | `perturbed_bar.json` | The same bar at rest on the ground, then perturbed. At 0.1 s the ground falls 0.1 m in 10 ms; the bar falls freely and lands at 0.2425 s, as free fall predicts. At 0.5 s a 5 ms force pulse knocks its right end up and sideways; it rocks, lands and settles flat. |
 
 Hand-authored topologies can live here too. Files may contain `//` comments.
@@ -65,6 +67,10 @@ Results at commit `78ce212`. The change on halving dt = 1e-4 s estimates the err
 | locking_wing | 2.4e-10 | 16.2, 16.1, 16.0 | 6.5e-10 J | 9 at every level |
 | locking_wing_collapse | 5.3e-13 | 17.0, 15.0, then at the rounding floor | 1.0e-13 J | 12 at every level |
 | locking_wing_preloaded | 1.6e-10 | 16.2, 16.0, 16.2 | 6.3e-10 J | 20 at every level |
+| toggle_arm | 8.9e-10 | 16.2, 16.1, 15.9 | 1.1e-9 J | 9 at every level |
+| toggle_arm_snap | 1.8e-10 | 16.0, 15.9, 17.9 | 1.5e-9 J | 20 at every level |
+
+The toggle rows were added at M8, on Windows. toggle_arm has the largest change at 1e-4 s so far, 8.9e-10, from the twitch swinging the elbow 30° against a stiff tendon. That is still about 70 times below float32 precision, and both runs stay in RK4's asymptotic range with every twitch, tendon and stop switch found at every level.
 
 The locking arm rows were added at M5 (after commit `67acd3b`). The collapse row was rerun at M6, when the arm gained its elbow fold stop (Section 4.1 of PLAN.md): the falling forearm now strikes the stop at 150° instead of folding on to about 170°. Its 13 tendon and stop switches are located to 1e-12 s at every level. The ratio is 16–18 down to 1e-4 s and drops to 9.7 on the last halving, where the change (8.9e-13) nears the rounding floor of a run through large angles and many events. The change at 1e-4 s is 8.6e-12, far below float32 precision.
 
@@ -184,3 +190,32 @@ columns: 1, 1.002, 1.004, 1.006, 1.008, 1.01, 1.012, 1.014, 1.016, 1.018, 1.02
 The post's height decides whether the lock rides out the gust. Lowered 5 mm, at the same tension, the wing loses the hand even with its tendon at design length. Raised 5 mm, it holds across the whole 2% range. A higher post gives the tendon a longer moment arm, which delays the fold.
 
 Computed at commit `1d70c27`.
+
+## Snap latch (M8)
+
+`ToggleArm` is a joint with two shapes it holds for free. The two-link arm keeps the locking arm's links and shoulder tendon, but its elbow tendon runs **over center**: from a post 5 cm behind and 3 cm above the elbow to a point 15 cm out and 3 cm above the lower link. The tendon is longest at the elbow angle where its line passes through the pin. On either side of that angle it pulls the elbow away from it, into the stop on that side: straight out, or folded to −60°. Moving between the two means stretching the tendon over the top, which is an energy barrier.
+
+`ChainStatics.ForToggle` predicts the poles and the barrier independently of the simulator (`Barrier` lets the shoulder settle at each elbow angle and takes the highest point between the poles, which is the saddle):
+
+| | Straight pole | Folded pole | Saddle |
+|---|---|---|---|
+| Elbow angle | 0° (on its stop, pressed with 0.394 N·m) | −63.03° (3° into the fold stop, pressed with 1.06 N·m) | −39.47° |
+| Upper link | 0° | +0.72° (folding lowers the moment about the shoulder) | +0.31° |
+| Elbow tendon | 20 N | 63 N | |
+| Barrier to the saddle | 411 mJ | 216 mJ | |
+
+The simulator holds both poles with zero torque: holding torques are about 1e-15 N·m, and released at either pole the elbow moves less than 1e-6 rad in 1 s. Gravity helps the fold, so the folded pole has the lower barrier.
+
+**What snaps it.** A brief torque couple across the elbow, a muscle twitch (`ToggleArm.Twitch`, a triangular pulse). Smallest angular impulse that snaps it:
+
+| Twitch | Straight → folded | Folded → straight |
+|---|---|---|
+| 5 ms | 0.0689 N·m·s | 0.0474 N·m·s |
+| 20 ms | 0.0746 N·m·s | 0.0512 N·m·s |
+| 50 ms | 0.0886 N·m·s | 0.0610 N·m·s |
+
+Just under the threshold the elbow comes back to the pole it started from. Just over, it settles at the other pole and needs no torque there. A shorter twitch needs less impulse but more energy. The work it does is always more than the barrier, as energy conservation requires: near the threshold, 2.5–4 times the barrier to fold and 1.5–1.8 times to extend. The rest goes into the tendon's damper, which works hardest in a fast snap.
+
+**A push on the outer link does not snap it.** Kicking the lower link down with the barrier's worth of kinetic energy (13 rad/s about the elbow, 0.414 J) bends the elbow only 4.6°. The kick mostly swings the whole arm about the shoulder, which is far softer than the latched elbow. Even 60 rad/s (8.8 J) does not snap it, and at 30 rad/s the shoulder lock itself gives way and the arm whirls about the shoulder. The latch is shielded by the joints around it, and switching it takes a couple across the joint itself.
+
+**The latch only works over a short travel.** With the tendon's ends at distances a and b from the pin, its stretch from a pole to the saddle is about a·b·Δ²/(2(a+b)²), at most Δ²/8, where Δ is the angle between them. A tendon that should stay under about 8% strain can only latch over Δ ≲ 45°. Here the peak strain is 7.8% (77 N). The quasi-static scan behind this design found no toggle under 10% strain that swings as far as the locking arm's 150° fold.

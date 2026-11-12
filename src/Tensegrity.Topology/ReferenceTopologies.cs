@@ -50,12 +50,23 @@ public static class ReferenceTopologies
     public const double WingElbowPreload = 0.5;
     public const double WingWristPreload = 0.075;
 
+    // Toggle arm parameters (PLAN.md M8): the ToggleArmGeometry defaults, plus
+    // elbow twitches of 20 ms. A 20 ms twitch snaps the straight elbow to
+    // folded from about 0.0746 N m s, and the folded one back from about
+    // 0.0512 N m s. Starts are off the step grid, like the wing's gust.
+    public const double TwitchDuration = 0.02;
+    public const double FoldTwitchStart = 0.10037;
+    public const double ExtendTwitchStart = 0.55037;
+    public const double FoldTwitchUnder = -0.070;
+    public const double FoldTwitchOver = -0.080;
+    public const double ExtendTwitchOver = 0.056;
+
     /// <summary>The wing with hyperextension stops, its elbow and wrist tendons preloading them.</summary>
     public static LockingWingGeometry PreloadedWing { get; } =
         new(HyperextensionStops: true, ElbowPreload: WingElbowPreload, WristPreload: WingWristPreload);
 
     public static IReadOnlyList<string> Names { get; } =
-        ["pendulum", "cable_oscillator", "planar_x", "planar_x_rest", "planar_x_free", "locking_arm", "locking_arm_collapse", "ground_drop", "perturbed_bar", "locking_wing", "locking_wing_collapse", "locking_wing_preloaded"];
+        ["pendulum", "cable_oscillator", "planar_x", "planar_x_rest", "planar_x_free", "locking_arm", "locking_arm_collapse", "ground_drop", "perturbed_bar", "locking_wing", "locking_wing_collapse", "locking_wing_preloaded", "toggle_arm", "toggle_arm_snap"];
 
     public static PlanarModel Create(string name) => name switch
     {
@@ -71,6 +82,8 @@ public static class ReferenceTopologies
         "locking_wing" => LockingWingGust(),
         "locking_wing_collapse" => LockingWingCollapse(),
         "locking_wing_preloaded" => LockingWingPreloaded(),
+        "toggle_arm" => ToggleArmHeld(),
+        "toggle_arm_snap" => ToggleArmSnap(),
         _ => throw new ArgumentException($"Unknown reference topology '{name}'. Known: {string.Join(", ", Names)}.", nameof(name)),
     };
 
@@ -211,6 +224,23 @@ public static class ReferenceTopologies
         LockingWing.Create(PreloadedWing, loads: [LockingWing.WingtipGust(WingGustImpulse, WingGustStart, WingGustDuration)]).With(
             name: "locking_wing_preloaded",
             description: WingSummary + ", and also stops against bending upward. The elbow and wrist tendons are shorter, so besides holding the wing they press each joint into its stop with 0.5 N m (elbow) and 0.075 N m (wrist), about its own gravity moment; this roughly doubles their tension. The stops sit preload/k short of straight (1.4 and 0.9 degrees), so the straight pose is exact. At 0.1 s the locking_wing gust hits the wingtip. The wrist bends to about 23 degrees as before, the elbow only to about 6 (10 without preload), and on the rebound both stop at their stops instead of the hand flicking up 52 degrees. The lock holds and the wing rings back to straight out.",
+            simulation: DefaultSimulation());
+
+    private const string ToggleSummary =
+        "Two-link toggle arm: upper 0.30 m / 0.20 kg pinned to the body at the shoulder and held by a tendon as in locking_arm, lower 0.35 m / 0.12 kg pinned at the elbow, standard gravity, no muscle torque at rest. The elbow tendon (EA 1000 N, c 150 N s/m, 20 N straight out) runs over center, from a post 5 cm behind and 3 cm above the elbow to a point 15 cm out and 3 cm above the lower link: it pulls the elbow into a stop at straight (pressing 0.39 N m) or into a fold stop at -60 degrees, with an energy barrier at -39.5 degrees between the two (stops k 20 N m/rad, c 0.2 N m s/rad)";
+
+    /// <summary>The toggle arm latched straight, given a folding twitch at the elbow just under what snaps it.</summary>
+    public static PlanarModel ToggleArmHeld() =>
+        ToggleArm.Create(actuators: [ToggleArm.Twitch(FoldTwitchUnder, FoldTwitchStart, TwitchDuration)]).With(
+            name: "toggle_arm",
+            description: ToggleSummary + ". At 0.1 s a 20 ms folding twitch of 0.070 N m s across the elbow, about 6% under what snaps it, bends the elbow to about -30 degrees, but the latch holds and the elbow returns to straight.",
+            simulation: DefaultSimulation());
+
+    /// <summary>The toggle arm snapped to folded by one elbow twitch and back to straight by another.</summary>
+    public static PlanarModel ToggleArmSnap() =>
+        ToggleArm.Create(actuators: [ToggleArm.Twitches([(FoldTwitchOver, FoldTwitchStart), (ExtendTwitchOver, ExtendTwitchStart)], TwitchDuration)]).With(
+            name: "toggle_arm_snap",
+            description: ToggleSummary + ". At 0.1 s a 20 ms folding twitch of 0.080 N m s across the elbow snaps it over the barrier into the fold stop, where it stays with no torque. At 0.55 s an extending twitch of 0.056 N m s snaps it back to straight.",
             simulation: DefaultSimulation());
 
     /// <summary>The free-floating X with no gravity, after opposite twists on its struts (zero total momentum).</summary>

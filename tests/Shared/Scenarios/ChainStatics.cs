@@ -7,6 +7,12 @@ namespace Tensegrity.Testing.Scenarios;
 public sealed record ChainFold(int Tendon, double Scale, IReadOnlyList<double> Angles);
 
 /// <summary>
+/// The energy barrier a snap latch crosses at one joint: the joint angle of
+/// the saddle, the potential there, and the pose (world link angles).
+/// </summary>
+public sealed record ChainBarrier(int Joint, double JointAngle, double Potential, IReadOnlyList<double> Angles);
+
+/// <summary>
 /// The geometric prediction for test 10 (PLAN.md section 7), generalized
 /// from <see cref="ArmStatics"/> to an open chain of n links pinned end to
 /// end from a shoulder at the origin, one tendon per joint, written
@@ -15,8 +21,10 @@ public sealed record ChainFold(int Tendon, double Scale, IReadOnlyList<double> A
 /// V(θ) = g·Σ mᵢ·yᵢ + Σ ½·k·(L − s·L0)²   (stretched tendons only)
 /// </code>
 /// and k = EA / (s·L0), plus ½·κⱼ·(φⱼ − uⱼ)² for each joint j pressed past
-/// a hyperextension stop at uⱼ (φⱼ = θⱼ − θⱼ₋₁, κⱼ its stiffness). Tendon j runs from an anchor behind and above joint j
-/// (on the ground for the shoulder, else on link j − 1) to a point on link j.
+/// a hyperextension stop at uⱼ (φⱼ = θⱼ − θⱼ₋₁, κⱼ its stiffness), and
+/// ½·κⱼ·(lⱼ − φⱼ)² for one folded past a fold stop at lⱼ. Tendon j runs from an anchor behind and above joint j
+/// (on the ground for the shoulder, else on link j − 1) to a point on link j,
+/// on its axis or above it.
 /// Turning link k alone about its inner joint Jₖ (its world angle θₖ) moves a
 /// point P of link k as ⊥(P − Jₖ) and carries every outer link along by
 /// ⊥(Jₖ₊₁ − Jₖ), which gives the gradient exactly; the Hessian is a central
@@ -88,6 +96,28 @@ public sealed class ChainStatics
             stops);
     }
 
+    /// <summary>
+    /// Statics of a <see cref="ToggleArm"/>, with the rest lengths its model
+    /// carries. The elbow's two stops are placed from the geometry, the
+    /// straight stop <see cref="ToggleArm.StraightPress"/> / k short of
+    /// straight, not read from the model.
+    /// </summary>
+    public static ChainStatics ForToggle(PlanarModel model, ToggleArmGeometry? geometry = null)
+    {
+        var g = geometry ?? new ToggleArmGeometry();
+        var c = model.System.Cables;
+        var straightStop = -ToggleArm.StraightPress(g) / g.ElbowStopStiffness;
+        return new ChainStatics(
+            [new Segment(g.UpperLength, g.UpperMass), new Segment(g.LowerLength, g.LowerMass)],
+            [
+                new Tendon(g.ShoulderAnchorBehind, g.ShoulderAnchorAbove, g.ShoulderInsertion, c[0].RestLength),
+                new Tendon(g.ElbowPostBehind, g.ElbowPostAbove, g.ElbowInsertion, c[1].RestLength, g.ElbowInsertionAbove),
+            ],
+            g.AxialStiffness,
+            9.81,
+            [null, new Stop(straightStop, g.ElbowStopStiffness, -g.ElbowFoldStop)]);
+    }
+
     /// <summary>The potential V at the pose, J, with tendon rest lengths scaled by <paramref name="scales"/>.</summary>
     public double Potential(IReadOnlyList<double> angles, IReadOnlyList<double> scales)
     {
@@ -112,7 +142,7 @@ public sealed class ChainStatics
             var anchor = j == 0
                 ? new Vector2d(-t.Behind, t.Above)
                 : joints[j] - (t.Behind * u[j - 1]) + (t.Above * Perp(u[j - 1]));
-            var length = (joints[j] + (t.Insertion * u[j]) - anchor).Length;
+            var length = (Insertion(joints, u, j) - anchor).Length;
             var rest = scales[j] * t.RestLength;
             if (length > rest)
             {
@@ -122,10 +152,12 @@ public sealed class ChainStatics
 
         for (var j = 1; j < n; j++)
         {
-            var past = StopPenetration(angles, j);
-            if (past > 0)
+            foreach (var past in new[] { StopPenetration(angles, j), FoldPenetration(angles, j) })
             {
-                v += 0.5 * stops[j]!.Value.Stiffness * past * past;
+                if (past > 0)
+                {
+                    v += 0.5 * stops[j]!.Value.Stiffness * past * past;
+                }
             }
         }
 
@@ -168,7 +200,7 @@ public sealed class ChainStatics
             var anchor = j == 0
                 ? new Vector2d(-t.Behind, t.Above)
                 : joints[j] - (t.Behind * u[j - 1]) + (t.Above * Perp(u[j - 1]));
-            var insertion = joints[j] + (t.Insertion * u[j]);
+            var insertion = Insertion(joints, u, j);
             var span = insertion - anchor;
             var rest = scales[j] * t.RestLength;
             var length = span.Length;
@@ -186,7 +218,8 @@ public sealed class ChainStatics
             }
         }
 
-        // A stop's torque turns link j down and link j − 1 up.
+        // A hyperextension stop's torque turns link j down and link j − 1 up;
+        // a fold stop's the other way.
         for (var j = 1; j < n; j++)
         {
             var past = StopPenetration(angles, j);
@@ -195,6 +228,14 @@ public sealed class ChainStatics
                 var torque = stops[j]!.Value.Stiffness * past;
                 d[j] += torque;
                 d[j - 1] -= torque;
+            }
+
+            var folded = FoldPenetration(angles, j);
+            if (folded > 0)
+            {
+                var torque = stops[j]!.Value.Stiffness * folded;
+                d[j] -= torque;
+                d[j - 1] += torque;
             }
         }
 
@@ -431,9 +472,194 @@ public sealed class ChainStatics
     public double StopTorque(IReadOnlyList<double> angles, int joint) =>
         joint > 0 && StopPenetration(angles, joint) is var past && past > 0 ? stops[joint]!.Value.Stiffness * past : 0;
 
+    /// <summary>
+    /// The torque joint <paramref name="joint"/>'s fold stop carries at the
+    /// pose, N·m (pushing the outer link up); zero off its stop or without one.
+    /// </summary>
+    public double FoldStopTorque(IReadOnlyList<double> angles, int joint) =>
+        joint > 0 && FoldPenetration(angles, joint) is var past && past > 0 ? stops[joint]!.Value.Stiffness * past : 0;
+
+    /// <summary>
+    /// The stable rest pose nearest <paramref name="guess"/> (world link
+    /// angles) at the given scales, by Newton's method from the guess.
+    /// </summary>
+    public double[] RestPoseNear(IReadOnlyList<double> guess, IReadOnlyList<double> scales)
+    {
+        var angles = Newton(scales, guess.ToArray());
+        if (!IsStable(angles, scales))
+        {
+            throw new InvalidOperationException("The rest pose found from this guess is not stable.");
+        }
+
+        return angles;
+    }
+
+    /// <summary>
+    /// The energy barrier between two rest poses that differ at joint
+    /// <paramref name="joint"/>, at scale 1. Holding that joint's angle φ
+    /// and letting every other joint settle gives the profile V*(φ); its
+    /// highest point between the poses is the lowest pass from one to the
+    /// other, the saddle of V. The profile is followed from
+    /// <paramref name="from"/> to <paramref name="to"/> in 0.25° steps and
+    /// its peak refined by golden section.
+    /// </summary>
+    public ChainBarrier Barrier(int joint, IReadOnlyList<double> from, IReadOnlyList<double> to)
+    {
+        var n = links.Length;
+        if (joint < 1 || joint >= n)
+        {
+            throw new ArgumentOutOfRangeException(nameof(joint), joint, $"Joints run from 1 to {n - 1}.");
+        }
+
+        var scales = Enumerable.Repeat(1.0, n).ToArray();
+
+        // Joint coordinates q: q₀ = θ₀, qᵢ = θᵢ − θᵢ₋₁. ∂V/∂qᵢ = Σₖ≥ᵢ ∂V/∂θₖ.
+        double[] ToJoints(IReadOnlyList<double> angles)
+        {
+            var q = new double[n];
+            for (var i = 0; i < n; i++)
+            {
+                q[i] = angles[i] - (i > 0 ? angles[i - 1] : 0);
+            }
+
+            return q;
+        }
+
+        double[] ToAngles(double[] q)
+        {
+            var angles = new double[n];
+            for (var i = 0; i < n; i++)
+            {
+                angles[i] = q[i] + (i > 0 ? angles[i - 1] : 0);
+            }
+
+            return angles;
+        }
+
+        double[] Residual(double[] q)
+        {
+            var g = Gradient(ToAngles(q), scales);
+            var r = new double[n];
+            for (var i = n - 1; i >= 0; i--)
+            {
+                r[i] = g[i] + (i < n - 1 ? r[i + 1] : 0);
+            }
+
+            return r;
+        }
+
+        // Settles every joint but the held one, from a guess with the held angle set.
+        double[] Settle(double[] guess)
+        {
+            var free = Enumerable.Range(0, n).Where(i => i != joint).ToArray();
+            var q = (double[])guess.Clone();
+            for (var iteration = 0; iteration < 100; iteration++)
+            {
+                var r = Residual(q);
+                var jacobian = new double[free.Length, free.Length];
+                const double h = 1e-7;
+                for (var c = 0; c < free.Length; c++)
+                {
+                    var probe = (double[])q.Clone();
+                    probe[free[c]] += h;
+                    var rp = Residual(probe);
+                    for (var i = 0; i < free.Length; i++)
+                    {
+                        jacobian[i, c] = (rp[free[i]] - r[free[i]]) / h;
+                    }
+                }
+
+                var dx = SolveLinear(jacobian, free.Select(i => r[i]).ToArray());
+                var size = 0.0;
+                for (var c = 0; c < free.Length; c++)
+                {
+                    q[free[c]] -= dx[c];
+                    size += Math.Abs(dx[c]);
+                }
+
+                if (size < 1e-14)
+                {
+                    return q;
+                }
+            }
+
+            throw new InvalidOperationException("Profile point did not converge.");
+        }
+
+        double[] At(double angle, double[] guess)
+        {
+            var start = (double[])guess.Clone();
+            start[joint] = angle;
+            return Settle(start);
+        }
+
+        var a = ToJoints(from);
+        var b = ToJoints(to);
+        var steps = (int)Math.Ceiling(Math.Abs(b[joint] - a[joint]) / (0.25 * Math.PI / 180));
+        var best = (Index: 0, Potential: double.NegativeInfinity, Q: a);
+        var profile = new List<double[]>();
+        var q = a;
+        for (var s = 0; s <= steps; s++)
+        {
+            q = At(a[joint] + ((b[joint] - a[joint]) * s / steps), q);
+            profile.Add(q);
+            var v = Potential(ToAngles(q), scales);
+            if (v > best.Potential)
+            {
+                best = (s, v, q);
+            }
+        }
+
+        if (best.Index == 0 || best.Index == steps)
+        {
+            throw new InvalidOperationException("The profile peaks at an end: the two poses are not separated by a barrier.");
+        }
+
+        var seed = profile[best.Index];
+        double PotentialAt(double angle) => Potential(ToAngles(At(angle, seed)), scales);
+        var lo = Math.Min(profile[best.Index - 1][joint], profile[best.Index + 1][joint]);
+        var hi = Math.Max(profile[best.Index - 1][joint], profile[best.Index + 1][joint]);
+        var golden = (Math.Sqrt(5) - 1) / 2;
+        var x1 = hi - (golden * (hi - lo));
+        var x2 = lo + (golden * (hi - lo));
+        var f1 = PotentialAt(x1);
+        var f2 = PotentialAt(x2);
+        while (hi - lo > 1e-10)
+        {
+            if (f1 > f2)
+            {
+                hi = x2;
+                x2 = x1;
+                f2 = f1;
+                x1 = hi - (golden * (hi - lo));
+                f1 = PotentialAt(x1);
+            }
+            else
+            {
+                lo = x1;
+                x1 = x2;
+                f1 = f2;
+                x2 = lo + (golden * (hi - lo));
+                f2 = PotentialAt(x2);
+            }
+        }
+
+        var peak = At(0.5 * (lo + hi), seed);
+        var peakAngles = ToAngles(peak);
+        return new ChainBarrier(joint, peak[joint], Potential(peakAngles, scales), peakAngles);
+    }
+
     /// <summary>How far joint j is past its hyperextension stop, rad; −∞ without one.</summary>
     private double StopPenetration(IReadOnlyList<double> angles, int joint) =>
         stops[joint] is { } stop ? angles[joint] - angles[joint - 1] - stop.Angle : double.NegativeInfinity;
+
+    /// <summary>How far joint j is folded past its fold stop, rad; −∞ without one.</summary>
+    private double FoldPenetration(IReadOnlyList<double> angles, int joint) =>
+        stops[joint] is { } stop ? stop.Fold - (angles[joint] - angles[joint - 1]) : double.NegativeInfinity;
+
+    /// <summary>Tendon j's insertion on link j, along its axis and above it.</summary>
+    private Vector2d Insertion(Vector2d[] joints, Vector2d[] u, int j) =>
+        joints[j] + (tendons[j].Insertion * u[j]) + (tendons[j].InsertionAbove * Perp(u[j]));
 
     private double[] Newton(IReadOnlyList<double> scales, double[] guess)
     {
@@ -515,9 +741,13 @@ public sealed class ChainStatics
 
     private readonly record struct Segment(double Length, double Mass);
 
-    /// <summary>A hyperextension stop on a joint angle: where it starts to push, rad, and its torsional stiffness, N·m/rad.</summary>
-    private readonly record struct Stop(double Angle, double Stiffness);
+    /// <summary>
+    /// Stops on a joint angle: where the hyperextension stop starts to push,
+    /// rad, their torsional stiffness, N·m/rad, and where the fold stop
+    /// starts to push, rad (−∞ for none).
+    /// </summary>
+    private readonly record struct Stop(double Angle, double Stiffness, double Fold = double.NegativeInfinity);
 
-    /// <summary>A tendon: its anchor behind and above its joint, its insertion along the next link, and its rest length at scale 1.</summary>
-    private readonly record struct Tendon(double Behind, double Above, double Insertion, double RestLength);
+    /// <summary>A tendon: its anchor behind and above its joint, its insertion along the next link (and above its axis), and its rest length at scale 1.</summary>
+    private readonly record struct Tendon(double Behind, double Above, double Insertion, double RestLength, double InsertionAbove = 0);
 }

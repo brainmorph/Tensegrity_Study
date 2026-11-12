@@ -101,6 +101,18 @@ public sealed class ReferenceTopologyTests : IDisposable
                 return (model.System, model.InitialState.ToArray());
             }
 
+            case "toggle_arm":
+            {
+                var model = Toggle.Held();
+                return (model.System, model.InitialState.ToArray());
+            }
+
+            case "toggle_arm_snap":
+            {
+                var model = Toggle.Snapping();
+                return (model.System, model.InitialState.ToArray());
+            }
+
             default:
                 throw new ArgumentException(name);
         }
