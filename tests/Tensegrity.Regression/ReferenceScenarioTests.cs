@@ -39,6 +39,8 @@ public class ReferenceScenarioTests
         // M8
         new ToggleArmScenario(),
         new ToggleArmSnapScenario(),
+        new FourBarClampScenario(),
+        new FourBarClampReleaseScenario(),
     ];
 
     public static TheoryData<string> All() => new(Scenarios.Select(s => s.Name));

@@ -61,12 +61,20 @@ public static class ReferenceTopologies
     public const double FoldTwitchOver = -0.080;
     public const double ExtendTwitchOver = 0.056;
 
+    // Four-bar clamp parameters (PLAN.md M8): the FourBarClampGeometry
+    // defaults, holding its band at 50 N, and a 20 ms release twitch on the
+    // crank. A 20 ms twitch releases 50 N from about 0.0025 N m s.
+    public const double ClampTension = 50.0;
+    public const double ClampReleaseStart = 0.10037;
+    public const double ClampReleaseDuration = 0.02;
+    public const double ClampRelease = 0.003;
+
     /// <summary>The wing with hyperextension stops, its elbow and wrist tendons preloading them.</summary>
     public static LockingWingGeometry PreloadedWing { get; } =
         new(HyperextensionStops: true, ElbowPreload: WingElbowPreload, WristPreload: WingWristPreload);
 
     public static IReadOnlyList<string> Names { get; } =
-        ["pendulum", "cable_oscillator", "planar_x", "planar_x_rest", "planar_x_free", "locking_arm", "locking_arm_collapse", "ground_drop", "perturbed_bar", "locking_wing", "locking_wing_collapse", "locking_wing_preloaded", "toggle_arm", "toggle_arm_snap"];
+        ["pendulum", "cable_oscillator", "planar_x", "planar_x_rest", "planar_x_free", "locking_arm", "locking_arm_collapse", "ground_drop", "perturbed_bar", "locking_wing", "locking_wing_collapse", "locking_wing_preloaded", "toggle_arm", "toggle_arm_snap", "four_bar_clamp", "four_bar_clamp_release"];
 
     public static PlanarModel Create(string name) => name switch
     {
@@ -84,6 +92,8 @@ public static class ReferenceTopologies
         "locking_wing_preloaded" => LockingWingPreloaded(),
         "toggle_arm" => ToggleArmHeld(),
         "toggle_arm_snap" => ToggleArmSnap(),
+        "four_bar_clamp" => FourBarClampLatched(),
+        "four_bar_clamp_release" => FourBarClampRelease(),
         _ => throw new ArgumentException($"Unknown reference topology '{name}'. Known: {string.Join(", ", Names)}.", nameof(name)),
     };
 
@@ -241,6 +251,23 @@ public static class ReferenceTopologies
         ToggleArm.Create(actuators: [ToggleArm.Twitches([(FoldTwitchOver, FoldTwitchStart), (ExtendTwitchOver, ExtendTwitchStart)], TwitchDuration)]).With(
             name: "toggle_arm_snap",
             description: ToggleSummary + ". At 0.1 s a 20 ms folding twitch of 0.080 N m s across the elbow snaps it over the barrier into the fold stop, where it stays with no torque. At 0.55 s an extending twitch of 0.056 N m s snaps it back to straight.",
+            simulation: DefaultSimulation());
+
+    private const string ClampSummary =
+        "Four-bar toggle clamp, no gravity (a clamp working in a horizontal plane): crank 5 cm / 0.05 kg on a ground pivot at the origin, coupler 17 cm / 0.08 kg, rocker (the clamp arm) 10 cm / 0.10 kg on a ground pivot 20 cm along +x. The crank and coupler line up (the toggle) with the crank at 27.0 degrees. The clamp holds an elastic band, 10 cm long and stretched 25%, from the rocker's end to an anchor on the body toward the crank pivot, at 50 N. Latched 3 degrees past the toggle, the band presses the crank into its stop (k 50 N m/rad, c 0.1 N m s/rad), placed so that pose is an exact equilibrium. A second stop 30 degrees short of the toggle catches the clamp when it opens, where the band, still stretched to 26 N, holds it open";
+
+    /// <summary>The clamp latched past center, holding its band: it holds with no torque.</summary>
+    public static PlanarModel FourBarClampLatched() =>
+        FourBarClamp.Create(ClampTension).With(
+            name: "four_bar_clamp",
+            description: ClampSummary + ". Past center, the band's pull drives the crank into its stop instead of opening the clamp, and it holds with no torque.",
+            simulation: DefaultSimulation());
+
+    /// <summary>The latched clamp released by a small twitch on the crank: the band throws it open.</summary>
+    public static PlanarModel FourBarClampRelease() =>
+        FourBarClamp.Create(ClampTension, actuators: [FourBarClamp.Twitch(-ClampRelease, ClampReleaseStart, ClampReleaseDuration)]).With(
+            name: "four_bar_clamp_release",
+            description: ClampSummary + ". At 0.1 s a 20 ms twitch of 0.003 N m s, 20% over what releases it, pulls the crank back over the toggle. The band throws the clamp open against its open stop and holds it there.",
             simulation: DefaultSimulation());
 
     /// <summary>The free-floating X with no gravity, after opposite twists on its struts (zero total momentum).</summary>

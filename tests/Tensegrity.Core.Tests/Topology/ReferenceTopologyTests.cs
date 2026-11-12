@@ -113,6 +113,18 @@ public sealed class ReferenceTopologyTests : IDisposable
                 return (model.System, model.InitialState.ToArray());
             }
 
+            case "four_bar_clamp":
+            {
+                var model = Clamp.Latched();
+                return (model.System, model.InitialState.ToArray());
+            }
+
+            case "four_bar_clamp_release":
+            {
+                var model = Clamp.Released();
+                return (model.System, model.InitialState.ToArray());
+            }
+
             default:
                 throw new ArgumentException(name);
         }

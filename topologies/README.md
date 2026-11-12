@@ -39,6 +39,8 @@ Tests hold each file equal to the catalog, and each catalog entry bit-identical 
 | `locking_wing_preloaded.json` | The same wing with stops against bending upward at the elbow and wrist, its tendons shortened to press each joint into its stop with about the joint's own gravity moment. The same gust bends the wrist 23° as before but the elbow only 6° (10° without), and the stops catch the rebound at +1.4° and +0.8°. The lock holds. |
 | `toggle_arm.json` | A snap latch (M8): the two-link arm with an over-center elbow tendon that pulls the elbow into a stop at straight or into a fold stop at −60°, with an energy barrier between the two. Latched straight, it gets a 20 ms folding twitch across the elbow 6% under what snaps it. The elbow bends to −30° and returns to straight. |
 | `toggle_arm_snap.json` | The same toggle arm. A folding twitch 7% over the threshold snaps the elbow into its fold stop, where it stays with no torque. An extending twitch at 0.55 s snaps it back to straight. |
+| `four_bar_clamp.json` | An over-center lock (M8): a four-bar toggle clamp, with no gravity, holding an elastic band at 50 N. Latched 3° past the toggle (where the crank and coupler line up), the band drives the crank into its stop instead of opening the clamp. It holds with no torque and does not move. |
+| `four_bar_clamp_release.json` | The same clamp. A 20 ms twitch of 0.003 N·m·s on the crank pulls it back over the toggle, and the band throws the clamp open against its open stop, 30° short of the toggle, where the still-stretched band holds it. |
 | `perturbed_bar.json` | The same bar at rest on the ground, then perturbed. At 0.1 s the ground falls 0.1 m in 10 ms; the bar falls freely and lands at 0.2425 s, as free fall predicts. At 0.5 s a 5 ms force pulse knocks its right end up and sideways; it rocks, lands and settles flat. |
 
 Hand-authored topologies can live here too. Files may contain `//` comments.
@@ -69,6 +71,10 @@ Results at commit `78ce212`. The change on halving dt = 1e-4 s estimates the err
 | locking_wing_preloaded | 1.6e-10 | 16.2, 16.0, 16.2 | 6.3e-10 J | 20 at every level |
 | toggle_arm | 8.9e-10 | 16.2, 16.1, 15.9 | 1.1e-9 J | 9 at every level |
 | toggle_arm_snap | 1.8e-10 | 16.0, 15.9, 17.9 | 1.5e-9 J | 20 at every level |
+| four_bar_clamp | 0 | (exact equilibrium: nothing moves) | 0 J | 0 |
+| four_bar_clamp_release | 2.3e-10 | 13.9, 15.5, 15.6 | 4.1e-8 J | 8 at every level |
+
+The clamp rows were added at M8 too. The latched clamp starts in an exact equilibrium, so no step size moves it at all. In the release run, the open-stop strike makes the energy balance error, 4.1e-8 J, the largest after the ground runs, and it falls 16 times per halving. A first version with the open stop 90° short let the band go slack, so the released clamp coasted with nothing holding it. It changed by 7.5e-7 on halving dt = 1e-4 s, failing this study. Moving the open stop to 30° short, where the band still holds the clamp open, and raising the stops' damping from 0.02 to 0.1 N·m·s/rad brought that down to 2.3e-10.
 
 The toggle rows were added at M8, on Windows. toggle_arm has the largest change at 1e-4 s so far, 8.9e-10, from the twitch swinging the elbow 30° against a stiff tendon. That is still about 70 times below float32 precision, and both runs stay in RK4's asymptotic range with every twitch, tendon and stop switch found at every level.
 
@@ -219,3 +225,29 @@ Just under the threshold the elbow comes back to the pole it started from. Just 
 **A push on the outer link does not snap it.** Kicking the lower link down with the barrier's worth of kinetic energy (13 rad/s about the elbow, 0.414 J) bends the elbow only 4.6°. The kick mostly swings the whole arm about the shoulder, which is far softer than the latched elbow. Even 60 rad/s (8.8 J) does not snap it, and at 30 rad/s the shoulder lock itself gives way and the arm whirls about the shoulder. The latch is shielded by the joints around it, and switching it takes a couple across the joint itself.
 
 **The latch only works over a short travel.** With the tendon's ends at distances a and b from the pin, its stretch from a pole to the saddle is about a·b·Δ²/(2(a+b)²), at most Δ²/8, where Δ is the angle between them. A tendon that should stay under about 8% strain can only latch over Δ ≲ 45°. Here the peak strain is 7.8% (77 N). The quasi-static scan behind this design found no toggle under 10% strain that swings as far as the locking arm's 150° fold.
+
+## Over-center lock (M8)
+
+`FourBarClamp` is a four-bar toggle clamp: a lock that its load holds shut. A crank turns on a ground pivot, a rocker (the clamp arm) on a second pivot 20 cm away, and a coupler joins them. The clamp holds an elastic band, stretched 25%, from the rocker's end to an anchor on the body, pulling that end toward the crank pivot. There is no gravity: it is a clamp working in a horizontal plane, so the band alone sets what holds.
+
+The **toggle** is where the crank and coupler line up (crank at 27.01°). The rocker's end is then as far from the crank pivot as it can get, so the band's pull runs straight down the crank and coupler into the pivot and puts no torque on the crank. On either side of the toggle, the pull turns the crank further from it. `FourBarStatics` predicts this from Freudenstein's equation and virtual work, independently of the simulator. The two agree to 1e-12 N·m. Holding torque against the band at 50 N:
+
+| Crank | Holding torque |
+|---|---|
+| 3° short of the toggle | +0.188 N·m (must be held shut) |
+| at the toggle | 0 |
+| 2° past | −0.124 N·m (pulled on, toward the stop) |
+
+**Latched.** The crank rests 3° past the toggle on its stop, which carries 0.184 N·m at 50 N. The stop is placed so that pose is an exact equilibrium, and in the simulator it does not move at all. The stop's torque is exactly proportional to the band's tension, so a tighter band locks it harder, and no torque is ever needed to hold it. Started 3° short of the toggle instead, the same band throws the clamp open.
+
+**Released.** A twitch on the crank pulls it back over the toggle, and the band throws the clamp open against its open stop, 30° short of the toggle. The band is still stretched there (26 N), so it holds the clamp open: the clamp has two rest poses, shut and open. Smallest 20 ms twitch that releases it:
+
+| Band tension | Twitch | Work done | Energy in the band |
+|---|---|---|---|
+| 10 N | 0.00078 N·m·s | 1.3 mJ | 0.1 J |
+| 50 N | 0.0025 N·m·s | 8.0 mJ | 0.5 J |
+| 200 N | 0.0065 N·m·s | 46 mJ | 2 J |
+
+Holding 200 N straight at the rocker would take 20 N·m. Here holding it takes nothing, and releasing it takes 1–2% of the energy the band holds. The twitch must do at least the work of stretching the band back to the toggle, less what the compressed stop gives back. It does 1.4–3.3 times that, and the stops and the band's damping take the rest.
+
+**Compared with the toggle arm.** Both lock with no torque, in different ways. The toggle arm's tendon builds an energy barrier, so it holds whatever the load, up to the barrier. The clamp has almost no barrier: the load does the locking, and a bigger load locks it harder. That is why it releases so cheaply. Near the toggle the clamp arm barely moves, so pulling the crank back costs little work against even a large load.

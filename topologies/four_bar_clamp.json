@@ -1,0 +1,164 @@
+{
+  "format_version": 1,
+  "name": "four_bar_clamp",
+  "description": "Four-bar toggle clamp, no gravity (a clamp working in a horizontal plane): crank 5 cm / 0.05 kg on a ground pivot at the origin, coupler 17 cm / 0.08 kg, rocker (the clamp arm) 10 cm / 0.10 kg on a ground pivot 20 cm along \u002Bx. The crank and coupler line up (the toggle) with the crank at 27.0 degrees. The clamp holds an elastic band, 10 cm long and stretched 25%, from the rocker\u0027s end to an anchor on the body toward the crank pivot, at 50 N. Latched 3 degrees past the toggle, the band presses the crank into its stop (k 50 N m/rad, c 0.1 N m s/rad), placed so that pose is an exact equilibrium. A second stop 30 degrees short of the toggle catches the clamp when it opens, where the band, still stretched to 26 N, holds it open. Past center, the band\u0027s pull drives the crank into its stop instead of opening the clamp, and it holds with no torque.",
+  "gravity": [
+    0,
+    0
+  ],
+  "constraint_stabilization": 50,
+  "links": [
+    {
+      "id": "crank",
+      "role": "link",
+      "mass": 0.05,
+      "inertia": 1.041666666666667E-05,
+      "length": 0.05,
+      "pose": {
+        "x": 0.02164795247047651,
+        "y": 0.012504645290290725,
+        "theta": 0.5238133456586234
+      },
+      "twist": {
+        "vx": 0,
+        "vy": 0,
+        "omega": 0
+      }
+    },
+    {
+      "id": "coupler",
+      "role": "link",
+      "mass": 0.08,
+      "inertia": 0.0001926666666666667,
+      "length": 0.17,
+      "pose": {
+        "x": 0.1195995388224528,
+        "y": 0.06246266768436263,
+        "theta": 0.456298088936828
+      },
+      "twist": {
+        "vx": 0,
+        "vy": 0,
+        "omega": 0
+      }
+    },
+    {
+      "id": "rocker",
+      "role": "link",
+      "mass": 0.1,
+      "inertia": 8.333333333333336E-05,
+      "length": 0.1,
+      "pose": {
+        "x": 0.1979515863519763,
+        "y": 0.049958022394071905,
+        "theta": 1.6117760686070621
+      },
+      "twist": {
+        "vx": 0,
+        "vy": 0,
+        "omega": 0
+      }
+    }
+  ],
+  "pins": [
+    {
+      "id": "crank_pivot",
+      "a": {
+        "link": "crank",
+        "point": [
+          -0.025,
+          0
+        ]
+      },
+      "b": {
+        "ground": [
+          0,
+          0
+        ]
+      },
+      "limit": {
+        "lower": -0.0521453074995053,
+        "upper": 0.5201298360267756,
+        "stiffness": 50,
+        "damping": 0.1
+      }
+    },
+    {
+      "id": "knuckle",
+      "a": {
+        "link": "coupler",
+        "point": [
+          -0.085,
+          0
+        ]
+      },
+      "b": {
+        "link": "crank",
+        "point": [
+          0.025,
+          0
+        ]
+      }
+    },
+    {
+      "id": "clamp_pin",
+      "a": {
+        "link": "coupler",
+        "point": [
+          0.085,
+          0
+        ]
+      },
+      "b": {
+        "link": "rocker",
+        "point": [
+          0.05,
+          0
+        ]
+      }
+    },
+    {
+      "id": "rocker_pivot",
+      "a": {
+        "link": "rocker",
+        "point": [
+          -0.05,
+          0
+        ]
+      },
+      "b": {
+        "ground": [
+          0.2,
+          0
+        ]
+      }
+    }
+  ],
+  "cables": [
+    {
+      "id": "band",
+      "a": {
+        "link": "rocker",
+        "point": [
+          0.05,
+          0
+        ]
+      },
+      "b": {
+        "ground": [
+          0.09590317270395257,
+          0.09991604478814381
+        ]
+      },
+      "rest_length": 0.08,
+      "axial_stiffness": 200,
+      "damping": 0.5
+    }
+  ],
+  "simulation": {
+    "dt": 0.0001,
+    "duration": 2,
+    "frame_stride": 100,
+    "event_tolerance": 1E-12
+  }
+}

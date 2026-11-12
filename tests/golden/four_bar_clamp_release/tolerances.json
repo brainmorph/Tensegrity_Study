@@ -1,0 +1,44 @@
+{
+  // Hand-written (PLAN.md 7a), following four_bar_clamp: the run is
+  // deterministic, so poses use 1e-10.
+  "time": { "absolute": 1e-12, "relative": 0 },
+  "crank_x": { "absolute": 1e-10, "relative": 0 },
+  "crank_y": { "absolute": 1e-10, "relative": 0 },
+  "crank_theta": { "absolute": 1e-10, "relative": 0 },
+  "coupler_x": { "absolute": 1e-10, "relative": 0 },
+  "coupler_y": { "absolute": 1e-10, "relative": 0 },
+  "coupler_theta": { "absolute": 1e-10, "relative": 0 },
+  "rocker_x": { "absolute": 1e-10, "relative": 0 },
+  "rocker_y": { "absolute": 1e-10, "relative": 0 },
+  "rocker_theta": { "absolute": 1e-10, "relative": 0 },
+  // Pin reactions carry the band's 50 N around the loop; the near-straight
+  // crank and coupler magnify a pose change into them.
+  // The band's tension, N: 50 N latched, 24-26 N holding it open.
+  "tension_band": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_crank_pivot_x": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_crank_pivot_y": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_knuckle_x": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_knuckle_y": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_clamp_pin_x": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_clamp_pin_y": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_rocker_pivot_x": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_rocker_pivot_y": { "absolute": 1e-6, "relative": 1e-9 },
+  "kinetic_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "potential_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "elastic_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "dissipated_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  // Worst |E_total(t) - E_total(0)|, J. Measured 4.1e-8 at dt 1e-4 in the
+  // dt study, falling 16x per dt halving: the open-stop strike, not drift.
+  "max_energy_balance_error": { "absolute": 5e-11, "relative": 0 },
+  "max_pin_residual": { "absolute": 1e-13, "relative": 0 },
+  // Run-wide extremes of the crank angle (rad) and its stop torque (N m),
+  // checked at every step.
+  "min_joint_angle_crank_pivot": { "absolute": 1e-10, "relative": 0 },
+  "max_joint_angle_crank_pivot": { "absolute": 1e-10, "relative": 0 },
+  "max_limit_torque_crank_pivot": { "absolute": 1e-8, "relative": 1e-9 },
+  // Twitch breakpoints, band slack/taut and stop contact switches.
+  "event_count": { "absolute": 0, "relative": 0 },
+  "unresolved_steps": { "absolute": 0, "relative": 0 },
+  // Work done by the release twitch on the crank, J.
+  "actuator_work": { "absolute": 1e-10, "relative": 1e-10 }
+}
