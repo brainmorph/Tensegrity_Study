@@ -48,6 +48,8 @@ The folder picker then starts in `runs/`.
 | Link | Bar of the topology's `length`, centered at the recorded `link.<id>.x`, `.y` and rotated by `.theta`. Struts are a little wider and warmer in colour. |
 | Cable | Line between the recorded endpoints `cable.<id>.ax`, `.ay`, `.bx`, `.by`. Its colour follows the recorded `cable.<id>.tension` on one scale per run, from 0 N to the highest tension in the manifest's `diagnostics.cable_tensions`. A slack cable (tension 0) is grey and dashed. |
 | Pin | Dot at the recorded `pin.<id>.x`, `.y`. Pins to the ground get a base. |
+| Post | A stalk from a link's bar out to each cable attachment that sits off the bar, at the attachment's body-frame point in the topology. It is drawn as part of the link, so it turns with the link's recorded pose. |
+| Body | The fixed body that ground-anchored cables pull on: each anchor (a topology point) joined by a gray bar to the nearest pin on the ground, or given a fixed mount if there is none. Drawn only when a cable is anchored to the ground. |
 
 Frames are shown exactly as recorded. During playback the frame on show
 is the last one recorded at or before the playback clock. Nothing is

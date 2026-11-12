@@ -25,6 +25,9 @@ public partial class RunScene : Node2D
     /// <summary>The ground line, or null when the run has none.</summary>
     public GroundView? Ground { get; private set; }
 
+    /// <summary>The fixed body that holds cable anchors on the ground, or null when no cable is anchored there.</summary>
+    public BodyView? Body { get; private set; }
+
     public int Frame { get; private set; } = -1;
 
     public IEnumerable<LinkView> Links => links.Select(l => l.View);
@@ -59,6 +62,16 @@ public partial class RunScene : Node2D
             groundHeightChannel = reader.HasChannel(FrameChannels.GroundHeight) ? reader.ChannelIndex(FrameChannels.GroundHeight) : -1;
         }
 
+        // Ground anchors and pins are fixed topology points, drawn as the body they belong to.
+        static Vector2 Point(double[] p) => new((float)p[0], (float)p[1]);
+        var anchors = topology.Cables.SelectMany(c => new[] { c.A, c.B }).Where(a => a.IsGround).Select(a => Point(a.Ground!)).ToList();
+        if (anchors.Count > 0)
+        {
+            var groundPins = topology.Pins.SelectMany(p => new[] { p.A, p.B }).Where(a => a.IsGround).Select(a => Point(a.Ground!)).ToList();
+            Body = new BodyView { Name = "body", Anchors = anchors, GroundPins = groundPins };
+            AddChild(Body);
+        }
+
         foreach (var cable in topology.Cables)
         {
             var view = new CableView { Name = "cable_" + cable.Id, Id = cable.Id, TensionScale = TensionScale };
@@ -74,7 +87,14 @@ public partial class RunScene : Node2D
 
         foreach (var link in topology.Links)
         {
-            var view = new LinkView { Name = "link_" + link.Id, Id = link.Id, Length = (float)link.Length, IsStrut = link.Role == LinkRoles.Strut };
+            // Cable attachments on this link that sit off its bar get a post out to them.
+            var half = (float)link.Length / 2;
+            var posts = topology.Cables.SelectMany(c => new[] { c.A, c.B })
+                .Where(a => a.Link == link.Id && a.Point is not null)
+                .Select(a => Point(a.Point!))
+                .Where(p => Mathf.Abs(p.Y) > 1e-6f || Mathf.Abs(p.X) > half)
+                .ToList();
+            var view = new LinkView { Name = "link_" + link.Id, Id = link.Id, Length = (float)link.Length, IsStrut = link.Role == LinkRoles.Strut, Posts = posts };
             AddChild(view);
             links.Add(new LinkSlot(
                 view,
@@ -108,6 +128,11 @@ public partial class RunScene : Node2D
         foreach (var slot in pins)
         {
             slot.View.Radius = stroke * 0.9f;
+        }
+
+        if (Body is not null)
+        {
+            Body.Stroke = stroke * 1.2f;
         }
 
         if (Ground is not null)

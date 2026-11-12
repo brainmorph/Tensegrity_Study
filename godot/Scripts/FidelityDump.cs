@@ -18,6 +18,11 @@ public static class FidelityDump
     {
         var t = scene.Transform;
         Line("scene", F(t.X.X), F(t.X.Y), F(t.Y.X), F(t.Y.Y), F(t.Origin.X), F(t.Origin.Y), scene.GetChildCount().ToString(CultureInfo.InvariantCulture));
+        if (scene.Body is { } body)
+        {
+            // The body is fixed: its anchors once, then its node transform.
+            Line(["body", F(body.Position.X), F(body.Position.Y), F(body.Rotation), .. body.Anchors.SelectMany(a => new[] { F(a.X), F(a.Y) })]);
+        }
         for (var frame = 0; frame < frameCount; frame++)
         {
             scene.ShowFrame(frame);

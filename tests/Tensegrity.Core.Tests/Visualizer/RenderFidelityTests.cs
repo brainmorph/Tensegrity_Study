@@ -23,6 +23,7 @@ public sealed class RenderFidelityTests : IDisposable
     [GodotTheory]
     [InlineData("planar_x")]
     [InlineData("cable_oscillator")]
+    [InlineData("toggle_arm_snap")]
     public void ViewerShowsEveryRecordedFrameExactly(string topology)
     {
         var runDirectory = Record(topology);
@@ -37,14 +38,28 @@ public sealed class RenderFidelityTests : IDisposable
             .Select(l => l[Prefix.Length..].TrimEnd('\r').Split(' '))
             .ToList();
 
+        // Cable anchors on the ground are drawn as one fixed body node, at their topology points.
+        var anchors = topologyDocument.Cables.SelectMany(c => new[] { c.A, c.B }).Where(a => a.IsGround).SelectMany(a => a.Ground!.Select(v => (float)v)).ToArray();
+        var bodies = anchors.Length > 0 ? 1 : 0;
+
         var scene = Assert.Single(lines, l => l[0] == "scene");
         Assert.Equal(["1", "0", "0", "-1", "0", "0"], scene[1..7]);
-        Assert.Equal(topologyDocument.Links.Count + topologyDocument.Cables.Count + topologyDocument.Pins.Count, int.Parse(scene[7], CultureInfo.InvariantCulture));
+        var elements = topologyDocument.Links.Count + topologyDocument.Cables.Count + topologyDocument.Pins.Count;
+        Assert.Equal(elements + bodies, int.Parse(scene[7], CultureInfo.InvariantCulture));
         Assert.Equal(["end", run.FrameCount.ToString(CultureInfo.InvariantCulture)], lines[^1]);
+        if (bodies == 1)
+        {
+            var body = Assert.Single(lines, l => l[0] == "body");
+            Assert.Equal([0f, 0f, 0f, .. anchors], body[1..].Select(Parse).ToArray());
+        }
+        else
+        {
+            Assert.DoesNotContain(lines, l => l[0] == "body");
+        }
 
         var shown = lines.Where(l => l[0] is "link" or "cable" or "pin")
             .ToDictionary(l => (l[0], int.Parse(l[1], CultureInfo.InvariantCulture), l[2]), l => l[3..].Select(Parse).ToArray());
-        Assert.Equal(run.FrameCount * int.Parse(scene[7], CultureInfo.InvariantCulture), shown.Count);
+        Assert.Equal(run.FrameCount * elements, shown.Count);
 
         for (var f = 0; f < run.FrameCount; f++)
         {
