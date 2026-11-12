@@ -41,6 +41,7 @@ Tests hold each file equal to the catalog, and each catalog entry bit-identical 
 | `toggle_arm_snap.json` | The same toggle arm. A folding twitch 7% over the threshold snaps the elbow into its fold stop, where it stays with no torque. An extending twitch at 0.55 s snaps it back to straight. |
 | `four_bar_clamp.json` | An over-center lock (M8): a four-bar toggle clamp, with no gravity, holding an elastic band at 50 N. Latched 3° past the toggle (where the crank and coupler line up), the band drives the crank into its stop instead of opening the clamp. It holds with no torque and does not move. |
 | `four_bar_clamp_release.json` | The same clamp. A 20 ms twitch of 0.003 N·m·s on the crank pulls it back over the toggle, and the band throws the clamp open against its open stop, 30° short of the toggle, where the still-stretched band holds it. |
+| `three_strut_snap.json` | A snap-through (M9): three posts pinned at their feet and joined at the top lean 15° left, held by a stay and by a series-elastic muscle along the third post. From 0.5 s the muscle shortens at 1 cm/s; its tension rises from 5 N to 19.7 N while the stay unloads. At about 3.5 s the stay goes slack and the frame falls over center onto a guy at 15° right. The muscle stops 4.2 cm in, leaving it at 0.25 N, 5% of its starting tension, and the snapped frame holds with no torque. Runs 10 s. |
 | `perturbed_bar.json` | The same bar at rest on the ground, then perturbed. At 0.1 s the ground falls 0.1 m in 10 ms; the bar falls freely and lands at 0.2425 s, as free fall predicts. At 0.5 s a 5 ms force pulse knocks its right end up and sideways; it rocks, lands and settles flat. |
 
 Hand-authored topologies can live here too. Files may contain `//` comments.
@@ -90,6 +91,9 @@ Results at commit `78ce212`. The change on halving dt = 1e-4 s estimates the err
 | toggle_arm_snap | 1.8e-10 | 16.0, 15.9, 17.9 | 1.5e-9 J | 20 at every level |
 | four_bar_clamp | 0 | (exact equilibrium: nothing moves) | 0 J | 0 |
 | four_bar_clamp_release | 2.3e-10 | 13.9, 15.5, 15.6 | 4.1e-8 J | 8 at every level |
+| three_strut_snap | 1.0e-10 | 0.0, 0.5, 0.5 (rounding floor at every level) | 1.6e-11 J | 34 at every level |
+
+The three_strut_snap row was added at M9, over its full 10 s (`--dt 4e-4`; the file's own duration). It is the one run whose change *grows* as the step shrinks: 4.2e-13, 5.1e-11, 1.0e-10, 2.1e-10. Its trajectory is already at the rounding floor at 4e-4 s, because the slow ramp and the gentle fall leave RK4 almost nothing to truncate, and rounding grows with the number of steps. The snap is a fall from an unstable shape, so it magnifies that rounding, but the change at 1e-4 s is still about 600 times below float32 precision. The energy balance error does show RK4's order: it falls 15.6 and 16.6 times per halving from 4e-4 s to 1e-4 s (4.0e-9, 2.6e-10, 1.6e-11 J), then sits at the floor. All 34 activation and cable switches are found at every level.
 
 The clamp rows were added at M8 too. The latched clamp starts in an exact equilibrium, so no step size moves it at all. In the release run, the open-stop strike makes the energy balance error, 4.1e-8 J, the largest after the ground runs, and it falls 16 times per halving. A first version with the open stop 90° short let the band go slack, so the released clamp coasted with nothing holding it. It changed by 7.5e-7 on halving dt = 1e-4 s, failing this study. Moving the open stop to 30° short, where the band still holds the clamp open, and raising the stops' damping from 0.02 to 0.1 N·m·s/rad brought that down to 2.3e-10.
 
@@ -268,3 +272,23 @@ The **toggle** is where the crank and coupler line up (crank at 27.01°). The ro
 Holding 200 N straight at the rocker would take 20 N·m. Here holding it takes nothing, and releasing it takes 1–2% of the energy the band holds. The twitch must do at least the work of stretching the band back to the toggle, less what the compressed stop gives back. It does 1.4–3.3 times that, and the stops and the band's damping take the rest.
 
 **Compared with the toggle arm.** Both lock with no torque, in different ways. The toggle arm's tendon builds an energy barrier, so it holds whatever the load, up to the barrier. The clamp has almost no barrier: the load does the locking, and a bigger load locks it harder. That is why it releases so cheaply. Near the toggle the clamp arm barely moves, so pulling the crank back costs little work against even a large load.
+
+## Snap-through under a muscle (M9)
+
+`ThreeStrut` is a frame that one muscle switches between two stable shapes, with the muscle nearly relaxed afterwards. Three posts (1 m, 0.5 kg) stand on pins at their feet, 0.4 m apart, joined at the top by two cables so they lean together. They touch nothing but cables and their pins. Gravity tips a leaning frame further over, so each shape is held by a cable on the far side: the starting shape (15° left) by a stay from the third top to an anchor on the right, the snapped shape (15° right) by a guy from the first top to an anchor on the left. The muscle runs from the third top along its post to an anchor 10 cm past its foot.
+
+`ThreeStrutStatics` predicts the snap independently of the simulator, from the potential energy in the three lean angles. As the muscle shortens, its tension rises and the stay unloads, while the frame barely moves:
+
+| | Muscle shortening | Muscle tension | Stay | Guy | Leans |
+|---|---|---|---|---|---|
+| Starting shape | 0 | 5.000 N | 2.663 N | slack | −15.000° |
+| The stay goes slack | 3.0136 cm | 19.729 N | 0 | slack | −14.60° |
+| Snapped, muscle stopped | 4.2033 cm | 0.250 N (5%) | slack | 3.581 N | +15.008°, +15.024°, +15.009° |
+
+Once the stay is slack, the muscle alone cannot hold the frame: the smallest stiffness without the stay is −1.12 J/rad², so the starting shape is gone and the frame falls. The energy falls all the way from the starting lean to 15° right, where the guy catches it, so there is nowhere else to land. Leaning right, the third top has swung toward the muscle's anchor, so the muscle's path is shorter and its tendon relaxes; the muscle stops where that leaves it at 5% of its starting tension.
+
+The simulator agrees. It holds the starting shape with no torque (1e-13 N·m) until the muscle starts. The stay goes slack at 2.9750 cm of shortening, 0.39 mm before the statics' point. That is the tendon damper: while the tendon stretches at about v = 1 cm/s it adds c·v = 0.2 N, worth c·v/k = 0.40 mm, and with it the two agree to 0.014 mm. The frame falls through vertical at about 4.5 s, is caught by the guy at 5 s, and is still by 7 s. It ends within 1e-6 rad of the statics' snapped shape, with the muscle at 0.25 N and no torque holding it.
+
+**Why the muscle needs a short moment arm.** For the tension to drop to almost nothing after the snap, the tendon's stretch at the snap must be about as much as the muscle's path shortens during it, so the tendon's strain is about that shortening over the tendon's length. The first design anchored the muscle far out, at (1.6, 0.6) m. Its path shortened 0.47 m in the snap, which needed a tendon of EA 1.6 N stretching 140%: a rubber band, not a tendon. Anchored beside the post's foot, like a muscle inserted near a joint, its path shortens only 5 cm while it pulls with 20 N. The tendon (EA 360 N) then peaks at 5.5% strain, under the 8% that M8 took as realistic.
+
+**The snapped tension is sensitive to the snapped lean.** The muscle's tendon is stiff (500 N/m) and its moment arm is 9.4 cm, so 0.1° of lean changes its tension by about 0.08 N, a third of its final value. Designing the guy by its mirror image of the stay, rather than by a fixed fraction of its length, moved the snapped lean by 0.26° and the muscle's final tension from 0.25 N to 0.04 N. So the stop is computed from the frame's actual cables, not assumed.

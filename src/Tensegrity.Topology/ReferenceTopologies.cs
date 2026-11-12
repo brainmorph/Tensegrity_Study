@@ -69,12 +69,17 @@ public static class ReferenceTopologies
     public const double ClampReleaseDuration = 0.02;
     public const double ClampRelease = 0.003;
 
+    // Three-strut snap parameters (PLAN.md M9): the ThreeStrutGeometry
+    // defaults, run long enough for the muscle to shorten, the frame to
+    // snap at about 3.5 s, and the snapped frame to come to rest.
+    public const double ThreeStrutDuration = 10.0;
+
     /// <summary>The wing with hyperextension stops, its elbow and wrist tendons preloading them.</summary>
     public static LockingWingGeometry PreloadedWing { get; } =
         new(HyperextensionStops: true, ElbowPreload: WingElbowPreload, WristPreload: WingWristPreload);
 
     public static IReadOnlyList<string> Names { get; } =
-        ["pendulum", "cable_oscillator", "planar_x", "planar_x_rest", "planar_x_free", "locking_arm", "locking_arm_collapse", "ground_drop", "perturbed_bar", "locking_wing", "locking_wing_collapse", "locking_wing_preloaded", "toggle_arm", "toggle_arm_snap", "four_bar_clamp", "four_bar_clamp_release"];
+        ["pendulum", "cable_oscillator", "planar_x", "planar_x_rest", "planar_x_free", "locking_arm", "locking_arm_collapse", "ground_drop", "perturbed_bar", "locking_wing", "locking_wing_collapse", "locking_wing_preloaded", "toggle_arm", "toggle_arm_snap", "four_bar_clamp", "four_bar_clamp_release", "three_strut_snap"];
 
     public static PlanarModel Create(string name) => name switch
     {
@@ -94,6 +99,7 @@ public static class ReferenceTopologies
         "toggle_arm_snap" => ToggleArmSnap(),
         "four_bar_clamp" => FourBarClampLatched(),
         "four_bar_clamp_release" => FourBarClampRelease(),
+        "three_strut_snap" => ThreeStrutSnap(),
         _ => throw new ArgumentException($"Unknown reference topology '{name}'. Known: {string.Join(", ", Names)}.", nameof(name)),
     };
 
@@ -269,6 +275,13 @@ public static class ReferenceTopologies
             name: "four_bar_clamp_release",
             description: ClampSummary + ". At 0.1 s a 20 ms twitch of 0.003 N m s, 20% over what releases it, pulls the crank back over the toggle. The band throws the clamp open against its open stop and holds it there.",
             simulation: DefaultSimulation());
+
+    /// <summary>The three-strut frame, snapped through to its other lean by its muscle shortening slowly.</summary>
+    public static PlanarModel ThreeStrutSnap() =>
+        ThreeStrut.Create().With(
+            name: "three_strut_snap",
+            description: "Three-strut frame: three posts 1 m / 0.5 kg pinned at their feet 0.4 m apart and joined at the top by two cables (EA 1000 N, c 20 N s/m), standard gravity, no torque. The posts lean 15 degrees left, held by a stay from the third top to an anchor on the right and by a series-elastic muscle (tendon EA 360 N, c 20 N s/m, 5 N; contractile part 0.3 m) running along the third post to an anchor 10 cm past its foot, a short moment arm. From 0.5 s the muscle shortens at 1 cm/s. Its tension rises from 5 N to about 19.7 N while the stay unloads and the frame barely moves. At about 3.5 s, 3.0 cm in, the stay goes slack, the muscle alone cannot hold the frame, and it falls over center to the right, where a guy from the left catches it at 15 degrees. Leaning right, the muscle's path is shorter, so its tendon relaxes: the muscle stops 4.2 cm in, leaving it at 0.25 N, 5% of its starting tension, and the snapped frame holds on the guy with no torque.",
+            simulation: new SimulationDocument { Dt = Dt, Duration = ThreeStrutDuration, FrameStride = FrameStride });
 
     /// <summary>The free-floating X with no gravity, after opposite twists on its struts (zero total momentum).</summary>
     public static PlanarModel PlanarXFree()

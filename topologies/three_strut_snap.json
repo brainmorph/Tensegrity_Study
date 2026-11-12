@@ -1,0 +1,240 @@
+{
+  "format_version": 1,
+  "name": "three_strut_snap",
+  "description": "Three-strut frame: three posts 1 m / 0.5 kg pinned at their feet 0.4 m apart and joined at the top by two cables (EA 1000 N, c 20 N s/m), standard gravity, no torque. The posts lean 15 degrees left, held by a stay from the third top to an anchor on the right and by a series-elastic muscle (tendon EA 360 N, c 20 N s/m, 5 N; contractile part 0.3 m) running along the third post to an anchor 10 cm past its foot, a short moment arm. From 0.5 s the muscle shortens at 1 cm/s. Its tension rises from 5 N to about 19.7 N while the stay unloads and the frame barely moves. At about 3.5 s, 3.0 cm in, the stay goes slack, the muscle alone cannot hold the frame, and it falls over center to the right, where a guy from the left catches it at 15 degrees. Leaning right, the muscle\u0027s path is shorter, so its tendon relaxes: the muscle stops 4.2 cm in, leaving it at 0.25 N, 5% of its starting tension, and the snapped frame holds on the guy with no torque.",
+  "gravity": [
+    0,
+    -9.81
+  ],
+  "constraint_stabilization": 50,
+  "links": [
+    {
+      "id": "post1",
+      "role": "strut",
+      "mass": 0.5,
+      "inertia": 0.041666666666666664,
+      "length": 1,
+      "pose": {
+        "x": -0.12940952255126037,
+        "y": 0.48296291314453416,
+        "theta": 1.832595714594046
+      },
+      "twist": {
+        "vx": 0,
+        "vy": 0,
+        "omega": 0
+      }
+    },
+    {
+      "id": "post2",
+      "role": "strut",
+      "mass": 0.5,
+      "inertia": 0.041666666666666664,
+      "length": 1,
+      "pose": {
+        "x": 0.27059047744873965,
+        "y": 0.48296291314453416,
+        "theta": 1.832595714594046
+      },
+      "twist": {
+        "vx": 0,
+        "vy": 0,
+        "omega": 0
+      }
+    },
+    {
+      "id": "post3",
+      "role": "strut",
+      "mass": 0.5,
+      "inertia": 0.041666666666666664,
+      "length": 1,
+      "pose": {
+        "x": 0.6705904774487397,
+        "y": 0.48296291314453416,
+        "theta": 1.832595714594046
+      },
+      "twist": {
+        "vx": 0,
+        "vy": 0,
+        "omega": 0
+      }
+    }
+  ],
+  "pins": [
+    {
+      "id": "foot1",
+      "a": {
+        "link": "post1",
+        "point": [
+          -0.5,
+          0
+        ]
+      },
+      "b": {
+        "ground": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "id": "foot2",
+      "a": {
+        "link": "post2",
+        "point": [
+          -0.5,
+          0
+        ]
+      },
+      "b": {
+        "ground": [
+          0.4,
+          0
+        ]
+      }
+    },
+    {
+      "id": "foot3",
+      "a": {
+        "link": "post3",
+        "point": [
+          -0.5,
+          0
+        ]
+      },
+      "b": {
+        "ground": [
+          0.8,
+          0
+        ]
+      }
+    }
+  ],
+  "cables": [
+    {
+      "id": "c12",
+      "a": {
+        "link": "post1",
+        "point": [
+          0.5,
+          0
+        ]
+      },
+      "b": {
+        "link": "post2",
+        "point": [
+          0.5,
+          0
+        ]
+      },
+      "rest_length": 0.3997373144648147,
+      "axial_stiffness": 1000,
+      "damping": 20
+    },
+    {
+      "id": "c23",
+      "a": {
+        "link": "post2",
+        "point": [
+          0.5,
+          0
+        ]
+      },
+      "b": {
+        "link": "post3",
+        "point": [
+          0.5,
+          0
+        ]
+      },
+      "rest_length": 0.3994749737216517,
+      "axial_stiffness": 1000,
+      "damping": 20
+    },
+    {
+      "id": "stay",
+      "a": {
+        "link": "post3",
+        "point": [
+          0.5,
+          0
+        ]
+      },
+      "b": {
+        "ground": [
+          1.6,
+          0
+        ]
+      },
+      "rest_length": 1.4294109444982261,
+      "axial_stiffness": 1000,
+      "damping": 20
+    },
+    {
+      "id": "guy",
+      "a": {
+        "link": "post1",
+        "point": [
+          0.5,
+          0
+        ]
+      },
+      "b": {
+        "ground": [
+          -0.8,
+          0
+        ]
+      },
+      "rest_length": 1.4281727071744512,
+      "axial_stiffness": 1000,
+      "damping": 20
+    },
+    {
+      "id": "muscle",
+      "a": {
+        "link": "post3",
+        "point": [
+          0.5,
+          0
+        ]
+      },
+      "b": {
+        "ground": [
+          0.9,
+          0
+        ]
+      },
+      "rest_length": 0.7204134964399052,
+      "axial_stiffness": 360,
+      "damping": 20,
+      "muscle": {
+        "initial_length": 0.3,
+        "shortening_speed": 0.01,
+        "activation": [
+          {
+            "time": 0.5,
+            "activation": 0
+          },
+          {
+            "time": 0.6,
+            "activation": 1
+          },
+          {
+            "time": 4.703342999999999,
+            "activation": 1
+          },
+          {
+            "time": 4.803342999999999,
+            "activation": 0
+          }
+        ]
+      }
+    }
+  ],
+  "simulation": {
+    "dt": 0.0001,
+    "duration": 10,
+    "frame_stride": 100,
+    "event_tolerance": 1E-12
+  }
+}

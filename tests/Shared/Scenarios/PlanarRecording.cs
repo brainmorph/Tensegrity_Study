@@ -8,9 +8,10 @@ namespace Tensegrity.Testing.Scenarios;
 
 /// <summary>
 /// Records poses, tensions, pin reactions, ground contact forces and energy
-/// (with external work when there are loads or a moving ground, and
-/// actuator work when there are actuators) for a
-/// planar structure run: 1 s at dt 1e-4 s, sampled every 0.05 s.
+/// (with external work when there are loads or a moving ground, actuator
+/// work when there are actuators or muscles, and each muscle's contractile
+/// length) for a planar structure run: by default 1 s at dt 1e-4 s, sampled
+/// every 0.05 s.
 /// </summary>
 internal static class PlanarRecording
 {
@@ -23,9 +24,15 @@ internal static class PlanarRecording
     /// records the extremes over every step of its joint angle
     /// (<c>min_/max_joint_angle_&lt;pin&gt;</c>) and of its joint-limit torque
     /// (<c>max_limit_torque_&lt;pin&gt;</c>, largest magnitude), since a stop
-    /// strike can fall between samples.
+    /// strike can fall between samples. A longer run passes its own
+    /// <paramref name="steps"/> and sampling <paramref name="stride"/>.
     /// </summary>
-    public static IReadOnlyDictionary<string, double[]> Record(PlanarModel model, SystemState state, IReadOnlyList<string>? limitPins = null)
+    public static IReadOnlyDictionary<string, double[]> Record(
+        PlanarModel model,
+        SystemState state,
+        IReadOnlyList<string>? limitPins = null,
+        long steps = Steps,
+        long stride = Stride)
     {
         var system = model.System;
         var stepper = new EventSplittingStepper(new Rk4Integrator(), system);
@@ -38,7 +45,8 @@ internal static class PlanarRecording
         var contactForces = new Vector2d[system.ContactCount];
         var maxPenetration = double.NegativeInfinity;
         var recordsExternalWork = system.Loads.Count > 0 || system.GroundLine is { IsMoving: true };
-        var recordsActuatorWork = system.Actuators.Count > 0;
+        var recordsActuatorWork = system.Actuators.Count > 0 || system.MuscleCount > 0;
+        var muscles = Enumerable.Range(0, system.Cables.Count).Where(c => system.Cables[c].Muscle is not null).ToArray();
         var watched = (limitPins ?? []).Select(id => system.Pins.Select(p => p.Id).ToList().IndexOf(id)).ToArray();
         if (watched.Contains(-1))
         {
@@ -50,7 +58,7 @@ internal static class PlanarRecording
         var maxAngle = watched.Select(_ => double.NegativeInfinity).ToArray();
         var maxTorque = new double[watched.Length];
 
-        FixedStepRunner.Run(state, stepper, Dt, Steps, (step, s) =>
+        FixedStepRunner.Run(state, stepper, Dt, steps, (step, s) =>
         {
             maxBalanceError = Math.Max(maxBalanceError, Math.Abs(system.TotalEnergy(s.Values) - initialEnergy));
             maxPinResidual = Math.Max(maxPinResidual, system.PinPositionResidual(s.Values));
@@ -71,7 +79,7 @@ internal static class PlanarRecording
                 }
             }
 
-            if (step % Stride != 0)
+            if (step % stride != 0)
             {
                 return;
             }
@@ -86,10 +94,15 @@ internal static class PlanarRecording
                 recorder.Add($"{id}_theta", pose.Angle);
             }
 
-            system.GetCableTensions(s.Values, tensions);
+            system.GetCableTensions(s.Time, s.Values, tensions);
             for (var c = 0; c < tensions.Length; c++)
             {
                 recorder.Add($"tension_{system.Cables[c].Id}", tensions[c]);
+            }
+
+            foreach (var c in muscles)
+            {
+                recorder.Add($"contractile_{system.Cables[c].Id}", system.GetContractileLength(s.Values, c));
             }
 
             if (reactions.Length > 0)
