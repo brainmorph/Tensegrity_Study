@@ -74,6 +74,8 @@ public sealed class PlanarSystem : ISwitchedSystem
     private readonly ResolvedPoint[] cableA;
     private readonly ResolvedPoint[] cableB;
     private readonly CableMode[] latchedModes;
+    private readonly int[] muscleSlot;
+    private readonly int[] latchedActivationSegments;
     private readonly JointActuator[] actuators;
     private readonly int[] actuatorPin;
     private readonly int[] latchedSegments;
@@ -133,6 +135,15 @@ public sealed class PlanarSystem : ISwitchedSystem
         cableA = this.cables.Select(c => Resolve(c.A, $"cable '{c.Id}'")).ToArray();
         cableB = this.cables.Select(c => Resolve(c.B, $"cable '{c.Id}'")).ToArray();
         latchedModes = new CableMode[this.cables.Length];
+        muscleSlot = new int[this.cables.Length];
+        var muscleCount = 0;
+        for (var c = 0; c < this.cables.Length; c++)
+        {
+            muscleSlot[c] = this.cables[c].Muscle is null ? -1 : muscleCount++;
+        }
+
+        MuscleCount = muscleCount;
+        latchedActivationSegments = new int[this.cables.Length];
 
         this.actuators = actuators?.ToArray() ?? [];
         RequireUniqueIds(this.actuators.Select(a => a.Id), "actuator", nameof(actuators));
@@ -213,8 +224,38 @@ public sealed class PlanarSystem : ISwitchedSystem
     /// <summary>Number of generalized coordinates: 3 per body.</summary>
     public int CoordinateCount => DofPerBody * links.Length;
 
-    /// <summary>Length of the state vector: coordinates, velocities, dissipated energy, actuator work, external work, then ground height and contact extensions if there is a ground.</summary>
-    public int StateLength => ExtensionBase + contacts.Length;
+    /// <summary>
+    /// Length of the state vector: coordinates, velocities, dissipated
+    /// energy, actuator work, external work, then ground height and contact
+    /// extensions if there is a ground, then one contractile length per
+    /// muscle. A system with no ground and no muscles ends at external work.
+    /// </summary>
+    public int StateLength => MuscleBase + MuscleCount;
+
+    /// <summary>Number of cables with a <see cref="Muscle"/> in series.</summary>
+    public int MuscleCount { get; }
+
+    /// <summary>Index of the contractile length ℓ of cable <paramref name="cable"/>'s muscle in the state vector.</summary>
+    /// <exception cref="ArgumentException">The cable has no muscle.</exception>
+    public int ContractileLengthIndex(int cable)
+    {
+        if ((uint)cable >= (uint)cables.Length)
+        {
+            throw new ArgumentOutOfRangeException(nameof(cable), cable, $"System has {cables.Length} cables.");
+        }
+
+        var slot = muscleSlot[cable];
+        return slot >= 0
+            ? MuscleBase + slot
+            : throw new ArgumentException($"Cable '{cables[cable].Id}' has no muscle.", nameof(cable));
+    }
+
+    /// <summary>Contractile length ℓ of cable <paramref name="cable"/>'s muscle at this state, m.</summary>
+    public double GetContractileLength(ReadOnlySpan<double> state, int cable)
+    {
+        CheckLength(state.Length);
+        return state[ContractileLengthIndex(cable)];
+    }
 
     /// <summary>Index of the cumulative dissipated energy in the state vector.</summary>
     public int DissipatedEnergyIndex => 2 * CoordinateCount;
@@ -236,17 +277,30 @@ public sealed class PlanarSystem : ISwitchedSystem
 
     private int ExtensionBase => (2 * CoordinateCount) + 3 + (ground is null ? 0 : 1);
 
+    private int MuscleBase => ExtensionBase + contacts.Length;
+
     public int PositionIndex(int body) => DofPerBody * CheckBody(body);
 
     public int VelocityIndex(int body) => CoordinateCount + (DofPerBody * CheckBody(body));
 
-    /// <summary>A zero state at <paramref name="time"/>, with the ground (if any) at its scheduled height.</summary>
+    /// <summary>
+    /// A zero state at <paramref name="time"/>, with the ground (if any) at
+    /// its scheduled height and each muscle at its contractile length then.
+    /// </summary>
     public SystemState CreateState(double time = 0)
     {
         var state = new SystemState(StateLength, time);
         if (ground is not null)
         {
             state.Values[GroundHeightIndex] = ground.HeightSchedule.ValueAt(time);
+        }
+
+        for (var c = 0; c < cables.Length; c++)
+        {
+            if (cables[c].Muscle is { } muscle)
+            {
+                state.Values[MuscleBase + muscleSlot[c]] = muscle.LengthAt(time);
+            }
         }
 
         return state;
@@ -332,6 +386,14 @@ public sealed class PlanarSystem : ISwitchedSystem
             var c = ContactAt(time, state, i, useLatchedModes: true);
             derivative[ExtensionIndex(i)] = ground!.ExtensionRate(c.Friction, c.NormalForce, c.Extension, c.Velocity.X);
         }
+
+        for (var c = 0; c < cables.Length; c++)
+        {
+            if (muscleSlot[c] >= 0)
+            {
+                derivative[MuscleBase + muscleSlot[c]] = ContractileRate(c, time, useLatchedModes: true);
+            }
+        }
     }
 
     /// <summary>
@@ -395,7 +457,7 @@ public sealed class PlanarSystem : ISwitchedSystem
 
         for (var c = 0; c < cables.Length; c++)
         {
-            var (length, rate, direction) = CableGeometry(state, c);
+            var (length, rate, direction) = TendonGeometry(time, state, c, useLatchedModes: false);
             var force = cables[c].Tension(length, rate) * direction;
             AddToHalf(halfForce, cableA[c], force);
             AddToHalf(halfForce, cableB[c], -force);
@@ -594,7 +656,8 @@ public sealed class PlanarSystem : ISwitchedSystem
         CheckLength(state.Length);
         for (var c = 0; c < cables.Length; c++)
         {
-            latchedModes[c] = CableModeAt(state, c);
+            latchedModes[c] = CableModeAt(time, state, c);
+            latchedActivationSegments[c] = cables[c].Muscle?.Activation.SegmentAt(time) ?? 0;
         }
 
         for (var p = 0; p < pins.Length; p++)
@@ -639,7 +702,12 @@ public sealed class PlanarSystem : ISwitchedSystem
 
         for (var c = 0; c < cables.Length; c++)
         {
-            if (CableModeAt(state, c) != latchedModes[c])
+            if (CableModeAt(time, state, c) != latchedModes[c])
+            {
+                return false;
+            }
+
+            if (cables[c].Muscle is { } muscle && muscle.Activation.SegmentAt(time) != latchedActivationSegments[c])
             {
                 return false;
             }
@@ -699,15 +767,48 @@ public sealed class PlanarSystem : ISwitchedSystem
         return (length, rate);
     }
 
-    /// <summary>The physical mode of cable <paramref name="cable"/> at this state.</summary>
+    /// <summary>The physical mode of plain cable <paramref name="cable"/> at this state.</summary>
+    /// <exception cref="InvalidOperationException">The cable has a muscle, whose mode depends on the time; use the overload that takes one.</exception>
     public CableMode GetCableMode(ReadOnlySpan<double> state, int cable)
     {
         var (length, rate) = GetCableLength(state, cable);
+        if (cables[cable].Muscle is not null)
+        {
+            throw new InvalidOperationException($"Cable '{cables[cable].Id}' has a muscle, so its mode depends on the time.");
+        }
+
         return cables[cable].ModeAt(length, rate);
     }
 
+    /// <summary>
+    /// The physical mode of cable <paramref name="cable"/> at this time and
+    /// state. For a muscle's tendon it is the tendon's own mode, which
+    /// depends on the muscle's contractile rate at <paramref name="time"/>.
+    /// </summary>
+    public CableMode GetCableMode(double time, ReadOnlySpan<double> state, int cable)
+    {
+        GetCableLength(state, cable);
+        return CableModeAt(time, state, cable);
+    }
+
     /// <summary>Physical tension of every cable at this state, N.</summary>
+    /// <exception cref="InvalidOperationException">A cable has a muscle, whose tension depends on the time; use the overload that takes one.</exception>
     public void GetCableTensions(ReadOnlySpan<double> state, Span<double> tensions)
+    {
+        if (MuscleCount > 0)
+        {
+            throw new InvalidOperationException("The system has muscles, so cable tensions depend on the time.");
+        }
+
+        GetCableTensions(0, state, tensions);
+    }
+
+    /// <summary>
+    /// Physical tension of every cable at this time and state, N. A muscle's
+    /// tendon damper sees the tendon's own rate, which depends on the
+    /// muscle's contractile rate at <paramref name="time"/>.
+    /// </summary>
+    public void GetCableTensions(double time, ReadOnlySpan<double> state, Span<double> tensions)
     {
         CheckLength(state.Length);
         if (tensions.Length != cables.Length)
@@ -717,7 +818,7 @@ public sealed class PlanarSystem : ISwitchedSystem
 
         for (var c = 0; c < cables.Length; c++)
         {
-            var (length, rate, _) = CableGeometry(state, c);
+            var (length, rate, _) = TendonGeometry(time, state, c, useLatchedModes: false);
             tensions[c] = cables[c].Tension(length, rate);
         }
     }
@@ -842,14 +943,20 @@ public sealed class PlanarSystem : ISwitchedSystem
         return total;
     }
 
-    /// <summary>Elastic energy stored in the cables, Σ ½·k·(L − L0)² over stretched cables, J.</summary>
+    /// <summary>Elastic energy stored in the cables, Σ ½·k·(L − L0)² over stretched cables (a muscle's tendon with its own L), J.</summary>
     public double CableElasticEnergy(ReadOnlySpan<double> state)
     {
         CheckLength(state.Length);
         var total = 0.0;
         for (var c = 0; c < cables.Length; c++)
         {
-            total += ElasticEnergy(cables[c], CableGeometry(state, c).Length);
+            var length = CableGeometry(state, c).Length;
+            if (muscleSlot[c] >= 0)
+            {
+                length -= state[MuscleBase + muscleSlot[c]];
+            }
+
+            total += ElasticEnergy(cables[c], length);
         }
 
         return total;
@@ -921,7 +1028,7 @@ public sealed class PlanarSystem : ISwitchedSystem
         }
     }
 
-    /// <summary>Work done on the system by the joint actuators since the start of the run, J.</summary>
+    /// <summary>Work done on the system by the joint actuators and muscles since the start of the run, J.</summary>
     public double ActuatorWork(ReadOnlySpan<double> state)
     {
         CheckLength(state.Length);
@@ -983,7 +1090,7 @@ public sealed class PlanarSystem : ISwitchedSystem
         for (var c = 0; c < cables.Length; c++)
         {
             var cable = cables[c];
-            var (length, rate, direction) = CableGeometry(state, c);
+            var (length, rate, direction) = TendonGeometry(time, state, c, useLatchedModes);
             var mode = useLatchedModes ? latchedModes[c] : cable.ModeAt(length, rate);
             var tension = cable.TensionInMode(mode, length, rate);
 
@@ -1253,7 +1360,12 @@ public sealed class PlanarSystem : ISwitchedSystem
         return useLatchedModes ? schedule.ValueInSegment(latchedSegments[actuator], time) : schedule.ValueAt(time);
     }
 
-    /// <summary>Rate of work done by the actuators, Σ τ·(ω_A − ω_B), W.</summary>
+    /// <summary>
+    /// Rate of work done by the actuators, Σ τ·(ω_A − ω_B), and by the
+    /// muscles, Σ −T·ℓ̇, W. A muscle's power balances its tendon: the path
+    /// takes −T·L̇_path from the bodies, the tendon stores and its damper
+    /// loses T·(L̇_path − ℓ̇), so the muscle supplies the difference −T·ℓ̇.
+    /// </summary>
     private double ActuatorPower(double time, ReadOnlySpan<double> state, bool useLatchedModes)
     {
         var total = 0.0;
@@ -1263,7 +1375,44 @@ public sealed class PlanarSystem : ISwitchedSystem
             total += ActuatorTorque(a, time, useLatchedModes) * RelativeRate(state, p);
         }
 
+        for (var c = 0; c < cables.Length; c++)
+        {
+            if (muscleSlot[c] < 0)
+            {
+                continue;
+            }
+
+            var cable = cables[c];
+            var (length, rate, _) = TendonGeometry(time, state, c, useLatchedModes);
+            var mode = useLatchedModes ? latchedModes[c] : cable.ModeAt(length, rate);
+            total -= cable.TensionInMode(mode, length, rate) * ContractileRate(c, time, useLatchedModes);
+        }
+
         return total;
+    }
+
+    /// <summary>Contractile rate ℓ̇ of cable <paramref name="cable"/>'s muscle, m/s, from the latched or current activation segment.</summary>
+    private double ContractileRate(int cable, double time, bool useLatchedModes)
+    {
+        var muscle = cables[cable].Muscle!;
+        return useLatchedModes ? muscle.RateInSegment(latchedActivationSegments[cable], time) : muscle.RateAt(time);
+    }
+
+    /// <summary>
+    /// Length, rate and direction of cable <paramref name="cable"/>'s
+    /// tendon: the cable's own for a plain cable, and the path less the
+    /// muscle's contractile part, L − ℓ and L̇ − ℓ̇, for a muscle's tendon.
+    /// </summary>
+    private (double Length, double Rate, Vector2d Direction) TendonGeometry(double time, ReadOnlySpan<double> state, int cable, bool useLatchedModes)
+    {
+        var path = CableGeometry(state, cable);
+        var slot = muscleSlot[cable];
+        if (slot < 0)
+        {
+            return path;
+        }
+
+        return (path.Length - state[MuscleBase + slot], path.Rate - ContractileRate(cable, time, useLatchedModes), path.Direction);
     }
 
     private Vector2d LoadForce(int load, double time, bool useLatchedModes)
@@ -1361,7 +1510,7 @@ public sealed class PlanarSystem : ISwitchedSystem
         for (var c = 0; c < cables.Length; c++)
         {
             var cable = cables[c];
-            var (length, rate, _) = CableGeometry(state, c);
+            var (length, rate, _) = TendonGeometry(time, state, c, useLatchedModes: true);
             var stretch = length - cable.RestLength;
             total += latchedModes[c] switch
             {
@@ -1402,9 +1551,9 @@ public sealed class PlanarSystem : ISwitchedSystem
         return stretch > 0 ? 0.5 * cable.Stiffness * stretch * stretch : 0.0;
     }
 
-    private CableMode CableModeAt(ReadOnlySpan<double> state, int cable)
+    private CableMode CableModeAt(double time, ReadOnlySpan<double> state, int cable)
     {
-        var (length, rate, _) = CableGeometry(state, cable);
+        var (length, rate, _) = TendonGeometry(time, state, cable, useLatchedModes: false);
         return cables[cable].ModeAt(length, rate);
     }
 

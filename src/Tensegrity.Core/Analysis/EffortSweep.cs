@@ -152,7 +152,7 @@ public static class EffortSweep
     {
         var (system, state) = TopologyMapping.FromDocument(document);
         var tensions = new double[system.Cables.Count];
-        system.GetCableTensions(state, tensions);
+        system.GetCableTensions(0, state, tensions);
         return (tensions, system.SolveHoldingTorques(0, state, pinIds));
     }
 

@@ -220,7 +220,7 @@ public static class RunRecorder
         }
 
         var tensions = new double[system.Cables.Count];
-        system.GetCableTensions(y, tensions);
+        system.GetCableTensions(state.Time, y, tensions);
         for (var c = 0; c < tensions.Length; c++)
         {
             var cable = system.Cables[c];
@@ -327,7 +327,7 @@ public static class RunRecorder
                 maxCompression[b] = Math.Max(maxCompression[b], compressions[b]);
             }
 
-            system.GetCableTensions(state, tensions);
+            system.GetCableTensions(time, state, tensions);
             for (var c = 0; c < tensions.Length; c++)
             {
                 minTension[c] = Math.Min(minTension[c], tensions[c]);

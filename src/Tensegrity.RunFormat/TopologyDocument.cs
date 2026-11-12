@@ -291,6 +291,39 @@ public sealed class CableDocument
 
     /// <summary>Viscous damping c, N·s/m.</summary>
     public double Damping { get; set; }
+
+    /// <summary>
+    /// The contractile part of a series-elastic muscle in series with this
+    /// cable, or null for a plain cable (PLAN.md M9). With a muscle, the
+    /// cable is the muscle's tendon and its rest length is the tendon's own.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public MuscleDocument? Muscle { get; set; }
+}
+
+/// <summary>
+/// A muscle's contractile part: it shortens at <see cref="ShorteningSpeed"/>
+/// times its activation, which is piecewise-linear in time through
+/// <see cref="Activation"/>, held before the first point, and must end at zero.
+/// </summary>
+public sealed class MuscleDocument
+{
+    /// <summary>Contractile length at t = 0, m.</summary>
+    public double InitialLength { get; set; }
+
+    /// <summary>Shortening speed at full activation, m/s.</summary>
+    public double ShorteningSpeed { get; set; }
+
+    public List<ActivationPointDocument> Activation { get; set; } = [];
+}
+
+public sealed class ActivationPointDocument
+{
+    /// <summary>s.</summary>
+    public double Time { get; set; }
+
+    /// <summary>Activation, from 0 (relaxed) to 1 (full speed).</summary>
+    public double Activation { get; set; }
 }
 
 /// <summary>Run settings carried by a topology file.</summary>

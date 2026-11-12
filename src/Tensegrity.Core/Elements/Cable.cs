@@ -30,10 +30,16 @@ public enum CableMode
 /// </code>
 /// so a slack cable never pulls, however fast it is lengthening, and the
 /// damper can lower the tension but never make it compressive.
+///
+/// With a <see cref="Elements.Muscle"/>, the cable is that muscle's elastic
+/// tendon (PLAN.md M9): the contractile part takes up length ℓ of the path,
+/// so L and L̇ above are the tendon's own, L_path − ℓ and L̇_path − ℓ̇, and
+/// L0, EA and k are the tendon's alone. <see cref="Systems.PlanarSystem"/>
+/// does that subtraction; the law here is unchanged.
 /// </summary>
 public sealed class Cable
 {
-    public Cable(string id, Attachment a, Attachment b, double restLength, double axialStiffness, double damping = 0)
+    public Cable(string id, Attachment a, Attachment b, double restLength, double axialStiffness, double damping = 0, Muscle? muscle = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
         if (a.IsGround && b.IsGround)
@@ -59,15 +65,19 @@ public sealed class Cable
         RestLength = restLength;
         AxialStiffness = axialStiffness;
         Damping = damping;
+        Muscle = muscle;
     }
 
     public string Id { get; }
+
+    /// <summary>The contractile part in series with this cable, or null for a plain cable.</summary>
+    public Muscle? Muscle { get; }
 
     public Attachment A { get; }
 
     public Attachment B { get; }
 
-    /// <summary>Rest length L0, m.</summary>
+    /// <summary>Rest length L0, m. With a muscle, the tendon's own rest length.</summary>
     public double RestLength { get; }
 
     /// <summary>Axial stiffness EA, N.</summary>

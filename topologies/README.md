@@ -45,6 +45,23 @@ Tests hold each file equal to the catalog, and each catalog entry bit-identical 
 
 Hand-authored topologies can live here too. Files may contain `//` comments.
 
+## Muscles (M9)
+
+A cable may carry a `muscle` block, which makes it a series-elastic muscle: the cable is the elastic tendon, and its `rest_length`, `axial_stiffness` and `damping` are the tendon's own. The contractile part takes up `initial_length` of the path at t = 0 and shortens at `shortening_speed` (m/s) times its activation, a piecewise-linear schedule from 0 (relaxed) to 1 (full speed) that must end at 0:
+
+```
+"muscle": {
+  "initial_length": 0.5,
+  "shortening_speed": 0.2,
+  "activation": [
+    { "time": 0.1, "activation": 0 }, { "time": 0.2, "activation": 1 },
+    { "time": 0.8, "activation": 1 }, { "time": 0.9, "activation": 0 }
+  ]
+}
+```
+
+The path between the cable's ends is the contractile length plus the tendon's, so at rest the cable's ends are `initial_length` + `rest_length` + the tendon's stretch apart. Shortening the muscle stretches the tendon, so its tension rises; the muscle's work counts as actuator work in the energy balance. With that block on a 2 kg weight hanging from a ground anchor (tendon 0.5 m, EA 2000 N, c 100 N s/m), the muscle lifts the weight by 0.14 m, the tension peaks at 23.8 N while the weight speeds up, and it settles back to m·g = 19.62 N.
+
 ## Step size (test 14)
 
 Every reference topology runs at **dt = 1e-4 s**. The evidence comes from `dt-study`, which runs each file for 2 s at dt = 4e-4 s and four successive halvings. It reports the largest change in any position or angle between one level and the next, over ten shared sample times:

@@ -27,7 +27,7 @@ public static class TopologyMapping
         var pins = document.Pins.Select(p =>
             new PinJoint(p.Id, ToAttachment(p.A, where), ToAttachment(p.B, where), p.Friction, ToLimit(p.Limit))).ToArray();
         var cables = document.Cables.Select(c =>
-            new Cable(c.Id, ToAttachment(c.A, where), ToAttachment(c.B, where), c.RestLength, c.AxialStiffness, c.Damping)).ToArray();
+            new Cable(c.Id, ToAttachment(c.A, where), ToAttachment(c.B, where), c.RestLength, c.AxialStiffness, c.Damping, ToMuscle(c, where))).ToArray();
         var actuators = (document.Actuators ?? []).Select(a => ToActuator(a, where)).ToArray();
 
         var system = new PlanarSystem(
@@ -106,6 +106,14 @@ public static class TopologyMapping
                 RestLength = c.RestLength,
                 AxialStiffness = c.AxialStiffness,
                 Damping = c.Damping,
+                Muscle = c.Muscle is { } m
+                    ? new MuscleDocument
+                    {
+                        InitialLength = m.InitialLength,
+                        ShorteningSpeed = m.ShorteningSpeed,
+                        Activation = m.Activation.Points.Select(p => new ActivationPointDocument { Time = p.Time, Activation = p.Value }).ToList(),
+                    }
+                    : null,
             }).ToList(),
             Actuators = system.Actuators.Count == 0 ? null : ActuatorDocuments(system),
             Loads = system.Loads.Count == 0 ? null : system.Loads.Select(l => new LoadDocument
@@ -143,6 +151,24 @@ public static class TopologyMapping
             document.Id,
             document.Pin,
             new Schedule(document.Schedule.Select(p => new SchedulePoint(p.Time, p.Torque))));
+    }
+
+    private static Muscle? ToMuscle(CableDocument cable, string where)
+    {
+        if (cable.Muscle is not { } document)
+        {
+            return null;
+        }
+
+        if (document.Activation is null || document.Activation.Count == 0)
+        {
+            throw new FormatException($"{where}: the muscle on cable '{cable.Id}' has no activation schedule.");
+        }
+
+        return new Muscle(
+            document.InitialLength,
+            document.ShorteningSpeed,
+            new Schedule(document.Activation.Select(p => new SchedulePoint(p.Time, p.Activation))));
     }
 
     private static ExternalLoad ToLoad(LoadDocument document, string where)
