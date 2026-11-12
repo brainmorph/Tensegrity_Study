@@ -1,0 +1,22 @@
+<Project>
+  <!--
+    Offline restore (PLAN.md 1a, rules 1 and 9). For a net8.0 project, the
+    .NET 10 SDK asks for the latest 8.0 reference pack it knows about, and
+    restore cannot download it. If that version is not installed but
+    8.0.31 is, compile against the installed one instead. Reference packs
+    only describe the API surface, so any 8.0.x pack builds the same code.
+    The override is inert on a machine that has the requested pack.
+  -->
+  <PropertyGroup>
+    <DisableTransitiveFrameworkReferenceDownloads>true</DisableTransitiveFrameworkReferenceDownloads>
+  </PropertyGroup>
+  <Target Name="UseInstalledNet8RefPack"
+          BeforeTargets="ProcessFrameworkReferences"
+          Condition="'$(TargetFramework)' == 'net8.0' and Exists('$(NetCoreTargetingPackRoot)/Microsoft.NETCore.App.Ref/8.0.31')">
+    <ItemGroup>
+      <KnownFrameworkReference Condition="'%(Identity)' == 'Microsoft.NETCore.App' and '%(TargetFramework)' == 'net8.0' and !Exists('$(NetCoreTargetingPackRoot)/Microsoft.NETCore.App.Ref/%(TargetingPackVersion)')">
+        <TargetingPackVersion>8.0.31</TargetingPackVersion>
+      </KnownFrameworkReference>
+    </ItemGroup>
+  </Target>
+</Project>

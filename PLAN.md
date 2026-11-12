@@ -61,6 +61,13 @@ Local resources in scope: .NET SDK 8.0 and 10.0; Godot 4.7 mono and its `GodotSh
 - Repo is under git.
 - Test framework: **xUnit 2.9.3** (runner 3.1.4, Microsoft.NET.Test.Sdk 17.14.1) from the local NuGet cache. Verified in M0: the repo `nuget.config` clears all remote sources and lists only `~/.nuget/packages`, and restore succeeds offline. A package or exact version not in the cache fails the restore instead of downloading.
 - Godot 4.7's C# assemblies target **.NET 8** (`GodotSharp.4.7.0`, `lib/net8.0`), so `Tensegrity.RunFormat` targets `net8.0`. All other projects target `net10.0`. `Godot.NET.Sdk 4.7.0` is in the local cache, so the Godot project can restore under the same `nuget.config`.
+- **Second machine: Windows 11, branch `windows11`.** Development there is tracked on its own branch. Commands are PowerShell. Setup it needed (2026-11-11):
+  - .NET SDK 10.0.404, installed with `winget install --id Microsoft.DotNet.SDK.10 --source winget`. `global.json` rolls forward with `latestFeature`, so any 10.0 SDK from 10.0.114 up resolves, on either machine.
+  - `nuget.config` points at `%USERPROFILE%/.nuget/packages`, since Windows PowerShell has no `HOME`. Git Bash sets both variables.
+  - The xUnit stack was restored once from nuget.org into the local cache, with approval (rule 4). Restore is offline-only again afterwards.
+  - The .NET 10 SDK asks for the 8.0.34 reference pack for `Tensegrity.RunFormat`. `Directory.Build.targets` compiles against the installed 8.0.31 pack when 8.0.34 is missing, and does nothing otherwise.
+  - Saved JSON (topologies, manifests, golden baselines) is written with LF on every platform, and `.gitattributes` checks text out as LF, so generated files match byte-for-byte across machines.
+  - Godot lives somewhere else on this machine. Its path is not recorded yet.
 
 ## 4. Physics model (Stage A: 2D)
 
