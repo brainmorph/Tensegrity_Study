@@ -2,3 +2,7 @@
 # topology and baseline JSON byte-for-byte with the committed files, so a
 # Windows checkout with core.autocrlf=true must not turn them into CRLF.
 * text=auto eol=lf
+
+# Batch files need CRLF: cmd.exe misreads some LF-only scripts.
+*.cmd text eol=crlf
+*.bat text eol=crlf

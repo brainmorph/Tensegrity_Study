@@ -67,7 +67,8 @@ Local resources in scope: .NET SDK 8.0 and 10.0; Godot 4.7 mono and its `GodotSh
   - The xUnit stack was restored once from nuget.org into the local cache, with approval (rule 4). Restore is offline-only again afterwards.
   - The .NET 10 SDK asks for the 8.0.34 reference pack for `Tensegrity.RunFormat`. `Directory.Build.targets` compiles against the installed 8.0.31 pack when 8.0.34 is missing, and does nothing otherwise.
   - Saved JSON (topologies, manifests, golden baselines) is written with LF on every platform, and `.gitattributes` checks text out as LF, so generated files match byte-for-byte across machines.
-  - Godot lives somewhere else on this machine. Its path is not recorded yet.
+  - Godot 4.7 mono is at `%USERPROFILE%\Downloads\Godot_v4.7-stable_mono_win64\Godot_v4.7-stable_mono_win64\Godot_v4.7-stable_mono_win64.exe` (a 4.6.2 build sits beside it; use 4.7). Open a run with `& $godot --path godot -- --run runs\<name> --play`. Set `TENSEGRITY_GODOT` to that path to run the three render-fidelity tests, which skip without it.
+  - `scripts\run-sim.ps1` and `scripts\view-latest.ps1` are the Windows versions of the bash scripts, with the same arguments, and `.cmd` wrappers run them from cmd.exe whatever the execution policy. The viewer is started detached with `Start-Process`, since a Godot started straight from a console closes with it.
 
 ## 4. Physics model (Stage A: 2D)
 

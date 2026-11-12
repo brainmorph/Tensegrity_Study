@@ -25,6 +25,18 @@ recently written run under `runs/`, passing any viewer options through:
 scripts/view-latest.sh --play
 ```
 
+On Windows, use the PowerShell versions, which take the same arguments.
+`scripts\run-sim.ps1` records a run (a topology name or a .json path)
+and `--view` opens it when it finishes. `scripts\view-latest.ps1` opens
+the newest run. The `.cmd` files beside them run the same scripts from
+cmd.exe or a double-click, whatever the execution policy. Godot comes
+from `TENSEGRITY_GODOT`, else the path in PLAN.md section 3:
+
+```powershell
+scripts\run-sim.ps1 toggle_arm_snap --view
+scripts\view-latest.ps1 --play
+```
+
 Relative `--run` paths resolve against the directory you launch from.
 You can also open the project in the Godot editor and run it from there.
 The folder picker then starts in `runs/`.
