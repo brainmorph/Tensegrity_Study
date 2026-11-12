@@ -39,6 +39,7 @@ These rules apply to every milestone and every change:
    - **Scope:** one logical change per commit. Don't mix refactors with behavior changes.
    - **Trailers** are added at the end as required by the session (currently `Co-Authored-By`).
    - Commits happen only when you ask for them.
+9. **No third-party libraries if at all possible.** Being in the local NuGet cache (rule 1) does not make a package fair game: implement the capability in this repo on top of the .NET base class library instead of referencing it. The only exceptions today are the test framework (xUnit, `xunit.runner.visualstudio`, `Microsoft.NET.Test.Sdk`) and Godot's own `GodotSharp` assemblies in the visualizer. Adding any other package needs explicit approval. This covers analysis and prototype scripts too: write them in C# or PowerShell, not in Python with numpy or scipy.
 
 Local resources in scope: .NET SDK 8.0 and 10.0; Godot 4.7 mono and its `GodotSharp` assemblies; the NuGet global cache at `~/.nuget/packages` (already contains xUnit, Microsoft.NET.Test.Sdk, coverlet, MathNet.Numerics, and others).
 
