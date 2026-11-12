@@ -39,8 +39,19 @@ public static class RunFiles
     }
 
     /// <summary>The exact text a topology is saved as, with a trailing newline.</summary>
-    public static string SerializeTopology(TopologyDocument document) =>
-        JsonSerializer.Serialize(document, Json) + "\n";
+    public static string SerializeTopology(TopologyDocument document) => ToText(document);
+
+    /// <summary>The exact text a run manifest is saved as, with a trailing newline.</summary>
+    public static string SerializeManifest(RunManifest manifest) => ToText(manifest);
+
+    /// <summary>
+    /// Indented JSON with LF line endings on every platform. The serializer
+    /// indents with <see cref="Environment.NewLine"/>, which is CRLF on
+    /// Windows, and net8.0 has no option to change it, so saved files
+    /// would otherwise differ byte-for-byte between machines.
+    /// </summary>
+    private static string ToText<T>(T value) =>
+        JsonSerializer.Serialize(value, Json).ReplaceLineEndings("\n") + "\n";
 }
 
 /// <summary>

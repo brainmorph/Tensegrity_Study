@@ -134,7 +134,7 @@ public static class RunRecorder
             Diagnostics = diagnostics,
         };
 
-        File.WriteAllText(Path.Combine(directory, RunFiles.Manifest), JsonSerializer.Serialize(manifest, RunFiles.Json) + "\n");
+        File.WriteAllText(Path.Combine(directory, RunFiles.Manifest), RunFiles.SerializeManifest(manifest));
         return manifest;
     }
 

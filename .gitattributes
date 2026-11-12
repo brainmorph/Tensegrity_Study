@@ -1,0 +1,4 @@
+# Check out text files with LF on every platform. Tests compare generated
+# topology and baseline JSON byte-for-byte with the committed files, so a
+# Windows checkout with core.autocrlf=true must not turn them into CRLF.
+* text=auto eol=lf

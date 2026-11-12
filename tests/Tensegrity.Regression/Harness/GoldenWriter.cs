@@ -14,6 +14,8 @@ public static class GoldenWriter
     private static readonly JsonWriterOptions WriterOptions = new()
     {
         Indented = true,
+        // LF on every platform, so a baseline written on Windows matches one written on Linux.
+        NewLine = "\n",
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
