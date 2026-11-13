@@ -8,8 +8,9 @@ namespace Tensegrity.Viewer;
 /// y-up, the screen y-down) and nothing else, so each child holds exactly
 /// the recorded values of the frame on show: links at their recorded
 /// center and angle, cables between their recorded endpoints, pins at
-/// their recorded positions, and the ground line (if any) at its recorded
-/// height. Nothing is interpolated or derived.
+/// their recorded positions, the ground line (if any) at its recorded
+/// height, and forces and torques at their recorded values. Nothing is
+/// interpolated or derived.
 /// </summary>
 public partial class RunScene : Node2D
 {
@@ -19,7 +20,8 @@ public partial class RunScene : Node2D
     private readonly List<LinkSlot> links = [];
     private readonly List<CableSlot> cables = [];
     private readonly List<PinSlot> pins = [];
-    private readonly List<ActuatorSlot> actuators = [];
+    private readonly List<TorqueSlot> torques = [];
+    private readonly List<ForceSlot> forces = [];
     private RunReader? run;
     private int groundHeightChannel = -1;
 
@@ -34,8 +36,6 @@ public partial class RunScene : Node2D
 
     public IEnumerable<PinView> Pins => pins.Select(p => p.View);
 
-    public IEnumerable<ActuatorView> Actuators => actuators.Select(a => a.View);
-
     /// <summary>
     /// Run-space box (y-up) holding the structure over every frame, padded.
     /// Used only to frame the camera and size line widths.
@@ -45,7 +45,7 @@ public partial class RunScene : Node2D
     /// <summary>The colour scale's top: the highest cable tension the core recorded over the run, N.</summary>
     public double TensionScale { get; private set; }
 
-    /// <summary>Builds one view per link, cable and pin, and shows frame 0.</summary>
+    /// <summary>Builds one view per link, cable, pin, torque and force, and shows frame 0.</summary>
     public void Build(RunReader reader)
     {
         run = reader;
@@ -53,7 +53,7 @@ public partial class RunScene : Node2D
         var topology = reader.Manifest.Topology;
         TensionScale = reader.Manifest.Diagnostics.CableTensions.Select(c => c.MaxTension).DefaultIfEmpty(0).Max();
 
-        // Draw order: ground under cables under links under pins.
+        // Draw order: ground under cables under links under pins under torques and forces.
         if (topology.Ground is { } ground)
         {
             // Runs from before the ground.height channel have a fixed ground at the topology's height.
@@ -99,25 +99,9 @@ public partial class RunScene : Node2D
         Bounds = MeasureBounds(reader, topology);
         var stroke = Mathf.Max(Bounds.Size.X, Bounds.Size.Y) * 0.012f;
 
-        // Servos draw last, over the pins, at the pin they act across.
-        var maxTorque = reader.Manifest.Actuators
-            .SelectMany(a => a.Schedule.Select(p => Math.Abs(p.Torque)))
-            .DefaultIfEmpty(0).Max();
-        foreach (var actuator in reader.Manifest.Actuators)
-        {
-            var view = new ActuatorView
-            {
-                Name = "servo_" + actuator.Id,
-                Id = actuator.Id,
-                MaxTorque = maxTorque > 0 ? maxTorque : 1,
-            };
-            AddChild(view);
-            actuators.Add(new ActuatorSlot(
-                view,
-                reader.ChannelIndex(FrameChannels.PinX(actuator.Pin)),
-                reader.ChannelIndex(FrameChannels.PinY(actuator.Pin)),
-                reader.ChannelIndex(FrameChannels.ActuatorTorque(actuator.Id))));
-        }
+        BuildTorques(reader, topology);
+        BuildForces(reader, topology);
+
         foreach (var slot in links)
         {
             slot.View.Stroke = stroke;
@@ -158,6 +142,7 @@ public partial class RunScene : Node2D
         {
             slot.View.Position = new Vector2(values[slot.X], values[slot.Y]);
             slot.View.Rotation = values[slot.Theta];
+            slot.View.ShowAngle(values[slot.Theta]);
         }
 
         foreach (var slot in cables)
@@ -170,13 +155,145 @@ public partial class RunScene : Node2D
             slot.View.Position = new Vector2(values[slot.X], values[slot.Y]);
         }
 
-        foreach (var slot in actuators)
+        foreach (var slot in torques)
         {
             slot.View.Position = new Vector2(values[slot.X], values[slot.Y]);
             slot.View.Show(values[slot.Torque]);
         }
 
+        foreach (var slot in forces)
+        {
+            slot.View.Position = new Vector2(values[slot.X], values[slot.Y]);
+            slot.View.Show(new Vector2(slot.Fx >= 0 ? values[slot.Fx] : 0, slot.Fy >= 0 ? values[slot.Fy] : 0));
+        }
+
         Frame = frame;
+    }
+
+    /// <summary>One torque view per servo and per pin with a joint limit.</summary>
+    private void BuildTorques(RunReader reader, TopologyDocument topology)
+    {
+        foreach (var actuator in reader.Manifest.Actuators)
+        {
+            var channel = reader.ChannelIndex(FrameChannels.ActuatorTorque(actuator.Id));
+            var view = new TorqueView
+            {
+                Name = "servo_" + actuator.Id,
+                Caption = "servo",
+                Note = $"on {PinEndName(topology, actuator.Pin)}",
+                Tint = new Color("ffd27a"),
+                MaxTorque = MaxAbs(reader, channel),
+            };
+            AddChild(view);
+            torques.Add(new TorqueSlot(view, reader.ChannelIndex(FrameChannels.PinX(actuator.Pin)), reader.ChannelIndex(FrameChannels.PinY(actuator.Pin)), channel));
+        }
+
+        foreach (var pin in topology.Pins)
+        {
+            if (!reader.HasChannel(FrameChannels.PinLimitTorque(pin.Id)))
+            {
+                continue;
+            }
+
+            var channel = reader.ChannelIndex(FrameChannels.PinLimitTorque(pin.Id));
+            var view = new TorqueView
+            {
+                Name = "limit_" + pin.Id,
+                Caption = $"limit {pin.Id}",
+                Note = $"on {PinEndName(topology, pin.Id)}",
+                Tint = new Color("bb9af7"),
+                ArcRadiusPx = 44f,
+                ReadoutOffsetPx = new Vector2(30f, -44f),
+                MaxTorque = MaxAbs(reader, channel),
+            };
+            AddChild(view);
+            torques.Add(new TorqueSlot(view, reader.ChannelIndex(FrameChannels.PinX(pin.Id)), reader.ChannelIndex(FrameChannels.PinY(pin.Id)), channel));
+        }
+    }
+
+    /// <summary>One arrow per recorded pin force, load, and ground contact force.</summary>
+    private void BuildForces(RunReader reader, TopologyDocument topology)
+    {
+        foreach (var pin in topology.Pins)
+        {
+            if (!reader.HasChannel(FrameChannels.PinFx(pin.Id)))
+            {
+                continue;
+            }
+
+            AddForce(reader, $"pin {pin.Id}", new Color("7aa2f7"),
+                reader.ChannelIndex(FrameChannels.PinX(pin.Id)), reader.ChannelIndex(FrameChannels.PinY(pin.Id)),
+                reader.ChannelIndex(FrameChannels.PinFx(pin.Id)), reader.ChannelIndex(FrameChannels.PinFy(pin.Id)));
+        }
+
+        foreach (var load in topology.Loads ?? new List<LoadDocument>())
+        {
+            if (!reader.HasChannel(FrameChannels.LoadFx(load.Id)))
+            {
+                continue;
+            }
+
+            AddForce(reader, $"load {load.Id}", new Color("ff9e64"),
+                reader.ChannelIndex(FrameChannels.LoadX(load.Id)), reader.ChannelIndex(FrameChannels.LoadY(load.Id)),
+                reader.ChannelIndex(FrameChannels.LoadFx(load.Id)), reader.ChannelIndex(FrameChannels.LoadFy(load.Id)));
+        }
+
+        foreach (var contact in topology.Ground?.Contacts ?? new List<ContactPointDocument>())
+        {
+            if (!reader.HasChannel(FrameChannels.ContactNormal(contact.Id)))
+            {
+                continue;
+            }
+
+            var x = reader.ChannelIndex(FrameChannels.ContactX(contact.Id));
+            var y = reader.ChannelIndex(FrameChannels.ContactY(contact.Id));
+            AddForce(reader, $"{contact.Id} normal", new Color("9ece6a"), x, y, -1, reader.ChannelIndex(FrameChannels.ContactNormal(contact.Id)));
+            AddForce(reader, $"{contact.Id} friction", new Color("e0af68"), x, y, reader.ChannelIndex(FrameChannels.ContactFriction(contact.Id)), -1);
+        }
+
+        // Every arrow shares one scale: the run's largest force is the longest arrow.
+        var maxForce = 0.0;
+        for (var f = 0; f < reader.FrameCount; f++)
+        {
+            var values = reader.Frame(f);
+            foreach (var slot in forces)
+            {
+                var fx = slot.Fx >= 0 ? values[slot.Fx] : 0;
+                var fy = slot.Fy >= 0 ? values[slot.Fy] : 0;
+                maxForce = Math.Max(maxForce, Math.Sqrt((double)fx * fx + (double)fy * fy));
+            }
+        }
+
+        foreach (var slot in forces)
+        {
+            slot.View.MaxForce = maxForce > 0 ? maxForce : 1;
+        }
+    }
+
+    private void AddForce(RunReader reader, string caption, Color tint, int x, int y, int fx, int fy)
+    {
+        var view = new ForceArrow { Name = "force_" + caption.Replace(' ', '_'), Caption = caption, Tint = tint };
+        AddChild(view);
+        forces.Add(new ForceSlot(view, x, y, fx, fy));
+    }
+
+    /// <summary>The name of the link on a pin's end A, or "ground".</summary>
+    private static string PinEndName(TopologyDocument topology, string pinId)
+    {
+        var pin = topology.Pins.First(p => p.Id == pinId);
+        return pin.A.Link ?? "ground";
+    }
+
+    /// <summary>The largest magnitude a channel takes over the run.</summary>
+    private static double MaxAbs(RunReader reader, int channel)
+    {
+        var max = 0.0;
+        for (var f = 0; f < reader.FrameCount; f++)
+        {
+            max = Math.Max(max, Math.Abs(reader.Frame(f)[channel]));
+        }
+
+        return max > 0 ? max : 1;
     }
 
     private Rect2 MeasureBounds(RunReader reader, TopologyDocument topology)
@@ -239,5 +356,8 @@ public partial class RunScene : Node2D
 
     private readonly record struct PinSlot(PinView View, int X, int Y);
 
-    private readonly record struct ActuatorSlot(ActuatorView View, int X, int Y, int Torque);
+    private readonly record struct TorqueSlot(TorqueView View, int X, int Y, int Torque);
+
+    /// <summary>A force at a point; a channel of -1 is a zero component.</summary>
+    private readonly record struct ForceSlot(ForceArrow View, int X, int Y, int Fx, int Fy);
 }

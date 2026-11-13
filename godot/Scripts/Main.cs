@@ -224,6 +224,7 @@ public partial class Main : Node
         scene!.ShowFrame(frame);
         clock = times[frame];
         hud.ShowFrame(frame, run.FrameCount, times[frame]);
+        hud.ShowReadout(FrameReadout.Build(run, frame, times[frame]));
     }
 
     private void Step(int by)

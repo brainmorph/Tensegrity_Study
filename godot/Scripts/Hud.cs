@@ -31,6 +31,8 @@ public partial class Hud : CanvasLayer
     private readonly Label error = new();
     private readonly PanelContainer info = new();
     private readonly PanelContainer timeline = new();
+    private readonly PanelContainer readoutPanel = new();
+    private readonly Label readout = new();
 
     public event Action? OpenRequested;
 
@@ -50,6 +52,7 @@ public partial class Hud : CanvasLayer
 
         root.AddChild(BuildTimeline());
         root.AddChild(BuildInfo());
+        root.AddChild(BuildReadout());
 
         error.AddThemeColorOverride("font_color", Warning);
         error.AutowrapMode = TextServer.AutowrapMode.WordSmart;
@@ -91,22 +94,28 @@ public partial class Hud : CanvasLayer
 
         slider.MaxValue = Math.Max(run.FrameCount - 1, 0);
         info.Visible = true;
+        readoutPanel.Visible = true;
         error.Text = string.Empty;
         SetControlsEnabled(true);
     }
 
-    /// <summary>The screen region between the info panel and the timeline bar, in pixels.</summary>
+    /// <summary>Shows the recorded values of the frame on show (see <see cref="FrameReadout"/>).</summary>
+    public void ShowReadout(string text) => readout.Text = text;
+
+    /// <summary>The screen region between the info panel and the timeline bar, left of the readout, in pixels.</summary>
     public Rect2 FreeArea()
     {
         var viewport = GetViewport().GetVisibleRect().Size;
         var top = info.Visible ? info.GetRect().End.Y : 0;
         var bottom = timeline.GetRect().Position.Y;
-        return new Rect2(0, top, viewport.X, bottom - top);
+        var right = readoutPanel.Visible ? readoutPanel.GetRect().Position.X : viewport.X;
+        return new Rect2(0, top, right, bottom - top);
     }
 
     public void ShowNoRun()
     {
         info.Visible = false;
+        readoutPanel.Visible = false;
         position.Text = "no run open";
         SetControlsEnabled(false);
     }
@@ -188,6 +197,18 @@ public partial class Hud : CanvasLayer
         bar.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.BottomWide);
         bar.GrowVertical = Control.GrowDirection.Begin;
         return bar;
+    }
+
+    private Control BuildReadout()
+    {
+        readoutPanel.AddThemeStyleboxOverride("panel", Panel());
+        readoutPanel.Visible = false;
+        readout.AddThemeFontSizeOverride("font_size", 13);
+        readout.AddThemeColorOverride("font_color", new Color("dfe3ea"));
+        readoutPanel.AddChild(readout);
+        readoutPanel.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.TopRight, Control.LayoutPresetMode.KeepSize, 12);
+        readoutPanel.GrowHorizontal = Control.GrowDirection.Begin;
+        return readoutPanel;
     }
 
     private Control BuildInfo()

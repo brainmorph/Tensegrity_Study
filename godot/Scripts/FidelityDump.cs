@@ -17,7 +17,9 @@ public static class FidelityDump
     public static void Print(RunScene scene, int frameCount)
     {
         var t = scene.Transform;
-        Line("scene", F(t.X.X), F(t.X.Y), F(t.Y.X), F(t.Y.Y), F(t.Origin.X), F(t.Origin.Y), scene.GetChildCount().ToString(CultureInfo.InvariantCulture));
+        // Counts the structure only (links, cables, pins), not the torque and force views drawn over it.
+        var structure = scene.Links.Count() + scene.Cables.Count() + scene.Pins.Count();
+        Line("scene", F(t.X.X), F(t.X.Y), F(t.Y.X), F(t.Y.Y), F(t.Origin.X), F(t.Origin.Y), structure.ToString(CultureInfo.InvariantCulture));
         for (var frame = 0; frame < frameCount; frame++)
         {
             scene.ShowFrame(frame);
