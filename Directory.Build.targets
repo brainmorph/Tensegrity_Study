@@ -1,0 +1,16 @@
+<Project>
+  <!--
+    SDK 10.0.115 asks for the 8.0.34 targeting packs for net8.0 projects
+    (Tensegrity.RunFormat, the Godot project), which are not in the local
+    NuGet cache, and nothing may be downloaded (PLAN.md 1a). Targeting packs
+    hold reference assemblies only, and 8.0 patch releases do not change the
+    API, so use the newest cached one instead.
+  -->
+  <Target Name="UseCachedNet8TargetingPacks" BeforeTargets="ProcessFrameworkReferences">
+    <ItemGroup>
+      <KnownFrameworkReference Update="@(KnownFrameworkReference)"
+                               Condition="'%(KnownFrameworkReference.TargetFramework)' == 'net8.0' and '%(KnownFrameworkReference.TargetingPackVersion)' == '8.0.34'"
+                               TargetingPackVersion="8.0.33" />
+    </ItemGroup>
+  </Target>
+</Project>
