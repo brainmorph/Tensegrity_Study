@@ -19,6 +19,7 @@ public partial class RunScene : Node2D
     private readonly List<LinkSlot> links = [];
     private readonly List<CableSlot> cables = [];
     private readonly List<PinSlot> pins = [];
+    private readonly List<ActuatorSlot> actuators = [];
     private RunReader? run;
     private int groundHeightChannel = -1;
 
@@ -32,6 +33,8 @@ public partial class RunScene : Node2D
     public IEnumerable<CableView> Cables => cables.Select(c => c.View);
 
     public IEnumerable<PinView> Pins => pins.Select(p => p.View);
+
+    public IEnumerable<ActuatorView> Actuators => actuators.Select(a => a.View);
 
     /// <summary>
     /// Run-space box (y-up) holding the structure over every frame, padded.
@@ -95,6 +98,26 @@ public partial class RunScene : Node2D
 
         Bounds = MeasureBounds(reader, topology);
         var stroke = Mathf.Max(Bounds.Size.X, Bounds.Size.Y) * 0.012f;
+
+        // Servos draw last, over the pins, at the pin they act across.
+        var maxTorque = reader.Manifest.Actuators
+            .SelectMany(a => a.Schedule.Select(p => Math.Abs(p.Torque)))
+            .DefaultIfEmpty(0).Max();
+        foreach (var actuator in reader.Manifest.Actuators)
+        {
+            var view = new ActuatorView
+            {
+                Name = "servo_" + actuator.Id,
+                Id = actuator.Id,
+                MaxTorque = maxTorque > 0 ? maxTorque : 1,
+            };
+            AddChild(view);
+            actuators.Add(new ActuatorSlot(
+                view,
+                reader.ChannelIndex(FrameChannels.PinX(actuator.Pin)),
+                reader.ChannelIndex(FrameChannels.PinY(actuator.Pin)),
+                reader.ChannelIndex(FrameChannels.ActuatorTorque(actuator.Id))));
+        }
         foreach (var slot in links)
         {
             slot.View.Stroke = stroke;
@@ -145,6 +168,12 @@ public partial class RunScene : Node2D
         foreach (var slot in pins)
         {
             slot.View.Position = new Vector2(values[slot.X], values[slot.Y]);
+        }
+
+        foreach (var slot in actuators)
+        {
+            slot.View.Position = new Vector2(values[slot.X], values[slot.Y]);
+            slot.View.Show(values[slot.Torque]);
         }
 
         Frame = frame;
@@ -209,4 +238,6 @@ public partial class RunScene : Node2D
     private readonly record struct CableSlot(CableView View, int Ax, int Ay, int Bx, int By, int Tension);
 
     private readonly record struct PinSlot(PinView View, int X, int Y);
+
+    private readonly record struct ActuatorSlot(ActuatorView View, int X, int Y, int Torque);
 }
