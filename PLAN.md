@@ -201,6 +201,7 @@ Purpose: when we make progress, we find out immediately if something that used t
 - M2: planar two-strut tensegrity (`planar_x` on pinned feet under gravity, `planar_x_free` floating), single cable oscillator (`cable_oscillator`, damped, through taut, recoiling and slack).
 - M5: two-link locking arm (`locking_arm` locked after a kick, `locking_arm_collapse` with the elbow tendon past its threshold). At M6 the arm gained an elbow fold stop at 150°, and the collapse baseline was updated on purpose to include the strike and rebound.
 - M6: ground contact (`ground_drop`, a bar dropped tilted on to the ground line: it lands, slips, bounces clear twice and comes to rest), and perturbations (`perturbed_bar`, the bar at rest when the ground falls away under it, then knocked at one end by a force pulse). The three-link wing (`locking_wing`, hit by a gust at the wingtip and holding, which also records its zero holding torques and three predicted thresholds; `locking_wing_collapse`, with the wrist tendon past its threshold; `locking_wing_preloaded`, the same gust with the elbow and wrist preloaded against hyperextension stops).
+- M7: the one-input coupled wing (`coupled_wing`, resting open on its elbow stop with the servo idle, hit by the wingtip gust and holding, which also records its zero holding torque and the designed ligament rest length, stop preloads and peak servo torque; `coupled_wing_switch`, folded and opened again by two servo pulses).
 
 ## 8. Milestones
 
@@ -268,7 +269,23 @@ Completed milestones are struck through, with the commit that finished them. Any
   - **Redundant pins.** `SolveHoldingTorques` falls back to the pseudo-inverse (cyclic Jacobi, in-repo) when the pins are redundant, and reports the redundancy. Non-redundant results are bit-identical. A four-bar with all four pins actuated matches the closed-form minimum-norm torques.
   - **Effort against angle.** `effort --bend PIN` bends one joint, turning its outer side rigidly, and gives the holding torques and every tension. The wing's locks are one-sided: a fold stretches the tendon, while an upward bend slackens it within 5°. Their stiffness fades toward the fold as the tendon's moment arm shrinks.
 
-### M7 — Refinement and Stage B (optional)
+### ~~M7 — Coupled wing~~ — done in `51a821a`, `79a71bf`
+
+Aim: intuition for how geometric locking in a bird wing is achieved and controlled by one actuator. The design record, with every decision and number, is `brainstorm-coupled-wing.md`; the five-bar study that led to it is `brainstorm-multistable-servo.md`.
+
+- ~~**Topology.** `CoupledWing`: a planar wing with one degree of freedom. The upper arm is bolted to the body, so it is the ground frame. The forearm is two bones, ulna and radius, pinned 2 cm apart to the upper arm and to the hand. With equal lengths this four-bar is a parallelogram, so the hand stays parallel to the upper arm while the elbow folds (a Z-fold). One servo (`JointActuator`) drives the elbow.~~
+- ~~**Locks.** The elbow has stops at open (0°) and folded (−150°). One elastic ligament (EA 200 N) crosses the elbow and passes over it at −75°, so it presses the elbow into whichever stop is nearer, with at least 0.5 N·m beyond the wing's weight. Its rest length is designed by bisection, and each stop sits preload/κ short of its pose, so both poses are exact equilibria.~~
+- ~~**Statics.** `CoupledWingStatics`, written independently of the simulator: the four-bar in closed form, V(φ), the rest poses and the servo holding torque dV/dφ. Tests check it against the closed-form parallelogram and against `PlanarSystem` (energy, ligament tension, holding torque along the fold, exactly two rest poses, zero servo torque at both).~~
+- ~~**Results.**~~
+  - ~~The wing has exactly two rest poses, open and folded. The barrier between them is 0.72 J out of open and 0.96 J out of folded. The five-bar's weight-held catches were millijoules deep: preload is what makes a lock deep.~~
+  - ~~Holding the elbow anywhere along the fold takes at most 0.99 N·m of servo torque. The servo only has to carry the elbow past over-center; the ligament finishes the move and holds the pose with the servo idle.~~
+  - ~~In `coupled_wing_switch`, a 2 N·m pulse of 0.15 s folds the wing by 0.3 s, and the same pulse reversed opens it by 0.8 s. In `coupled_wing`, the wingtip gust folds the open wing 13.5° and it returns to its stop.~~
+  - ~~The stops must absorb the blow. The ligament delivers the whole barrier's energy to the stop, and the parallelogram jams 15° beyond it, where the ulna lines up with the radius offset. The M5/M6 stop values (20 N·m/rad, 0.2 N·m·s/rad) let even the gentlest fold reach that point. Damping matters more than stiffness: a stiff, lightly damped stop bounces the wing back over the barrier. The wing uses 100 N·m/rad with 2.5 N·m·s/rad, about critical damping, and overshoots 4.4° at most.~~
+- ~~**Regression.** `coupled_wing` and `coupled_wing_switch` are reference topologies with golden baselines and dt-study rows (`topologies/README.md`).~~
+- Left open, carried forward: visual validation of both runs in Godot (M8). Ideas not agreed: free the shoulder with its own tendon; a non-parallelogram radius so the wrist folds faster or slower than the elbow; a position-controlled servo; CLI support for sweeping the ligament geometry.
+
+### M8 — Refinement and Stage B (optional)
+- **Carried from M7:** visual validation of the coupled wing in Godot. Check that `coupled_wing_switch` shows the Z-fold with the hand staying parallel to the upper arm, and that both runs sit on their stops when at rest. Runs are saved by `scripts/run-sim.sh coupled_wing_switch` and `scripts/run-sim.sh coupled_wing`.
 - Adaptive RK (Dormand–Prince) or implicit integrator if stiff cases demand it.
 - Form-finding by dynamic relaxation from a loose initial guess.
 - Stage B: 3D rigid bodies, same topologies extended to 3D.
