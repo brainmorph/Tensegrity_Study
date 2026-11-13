@@ -14,7 +14,7 @@ namespace Tensegrity.Cli;
 /// 2 bad usage, 3 run written but a strut went into tension (a
 /// configuration error for the topology, PLAN.md 4.1).
 /// </summary>
-public sealed class CliApp
+public sealed partial class CliApp
 {
     public const int Success = 0;
     public const int Failure = 1;
@@ -51,6 +51,21 @@ public sealed class CliApp
               cable's stretch). VALUES is FROM:TO:N or a comma-separated list.
               A configuration collapses when a joint angle moves more than
               --collapse-angle (default 90) from its start during the run.
+          minima [--set NAME=V[,NAME=V...]] [--vary NAME=VALUES [--vary NAME=VALUES]]
+                 [--grid DEG] [--map yes] [--save FILE --at N] [--csv FILE]
+              Statics of the tendon-held five-bar (brainstorm-multistable-servo.md):
+              relax a grid of starts (--grid, default 5 deg, or 10 with --vary)
+              to the potential's minima, then drive the servo quasi-statically
+              between neighbouring minima. Reports the minima, the transitions
+              and the spec's checks. NAME is a geometry parameter (base_width,
+              servo_length, coupler_c_length, coupler_d_length, passive_length,
+              link_mass, axial_stiffness, gravity, tendon_c.x, tendon_c.y,
+              tendon_c.rest, and likewise tendon_d, tendon_e and tendon_ce, which
+              also has tendon_ce.at, its place on coupler C-E from 0 at C to 1
+              at E), set to an absolute value. With --vary, one line per configuration and a map.
+              --map yes prints where each start ended; --save writes the five-bar
+              at rest in minimum N as a topology file; --csv writes the
+              transition paths (or, with --vary, the sweep).
           export-csv RUN_DIR [--out FILE]
               Write a run's frames as CSV, one row per frame (default
               RUN_DIR/frames.csv).
@@ -101,6 +116,7 @@ public sealed class CliApp
                 "export-topologies" => ExportTopologiesCommand(options),
                 "effort" => EffortCommand(options),
                 "sweep" => SweepCommand(options),
+                "minima" => MinimaCommand(options),
                 _ => throw new UsageException($"unknown command '{args[0]}'."),
             };
         }
@@ -504,7 +520,7 @@ public sealed class CliApp
     internal sealed class Options
     {
         /// <summary>Options that may be given more than once.</summary>
-        private static readonly string[] Repeatable = ["impulse", "force", "vary"];
+        private static readonly string[] Repeatable = ["impulse", "force", "vary", "set"];
 
         private readonly Dictionary<string, List<string>> values = new(StringComparer.Ordinal);
 
