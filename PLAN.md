@@ -285,7 +285,7 @@ Aim: intuition for how geometric locking in a bird wing is achieved and controll
 - Left open, carried forward: visual validation of both runs in Godot (M8). Ideas not agreed: free the shoulder with its own tendon; a non-parallelogram radius so the wrist folds faster or slower than the elbow; a position-controlled servo; CLI support for sweeping the ligament geometry.
 
 ### M8 — Refinement and Stage B (optional)
-- **Carried from M7:** visual validation of the coupled wing in Godot. Check that `coupled_wing_switch` shows the Z-fold with the hand staying parallel to the upper arm, and that both runs sit on their stops when at rest. Runs are saved by `scripts/run-sim.sh coupled_wing_switch` and `scripts/run-sim.sh coupled_wing`.
+- ~~**Carried from M7:** visual validation of the coupled wing in Godot. Check that `coupled_wing_switch` shows the Z-fold with the hand staying parallel to the upper arm, and that both runs sit on their stops when at rest. Runs are saved by `scripts/run-sim.sh coupled_wing_switch` and `scripts/run-sim.sh coupled_wing`.~~ Checked by the user in Godot on 2026-11-13: the view matches the prediction.
 - Adaptive RK (Dormand–Prince) or implicit integrator if stiff cases demand it.
 - Form-finding by dynamic relaxation from a loose initial guess.
 - Stage B: 3D rigid bodies, same topologies extended to 3D.

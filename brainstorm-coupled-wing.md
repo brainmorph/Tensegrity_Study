@@ -1,6 +1,6 @@
 # Brainstorm: a one-input coupled wing
 
-Status: **built and committed, 2026-11-13.** All six build steps are done, the full suite is green, and M7 is struck in PLAN.md. What remains is a look at the two runs in Godot (carried to M8). This file is the handoff; read all of "Handoff" before doing anything.
+Status: **built and committed, 2026-11-13.** All six build steps are done, the full suite is green, and M7 is struck in PLAN.md. The Godot look at the two runs was done by the user on 2026-11-13 and matched the prediction (M8 item struck). No follow-up is agreed. This file is the handoff; read all of "Handoff" before doing anything.
 
 ## Handoff (read this first)
 
@@ -35,7 +35,7 @@ Status: **built and committed, 2026-11-13.** All six build steps are done, the f
 - The full suite is green: 488 passed in core, 40 in regression (checked 2026-11-13).
 - Saved runs to view in Godot: `runs/2026-11-13_111858_coupled_wing_switch` and `runs/2026-11-13_111905_coupled_wing` (`scripts/view-latest.sh` opens the newest).
 
-**Immediate next step:** none is agreed. The Godot visual check is open (PLAN.md M8), and "Ideas for later" lists possible follow-ups; ask the user which, if any.
+**Immediate next step:** none is agreed. The Godot visual check is done (user confirmed 2026-11-13). "Ideas for later" lists possible follow-ups; ask the user which, if any.
 
 ## Decisions (all 2026-11-13)
 
