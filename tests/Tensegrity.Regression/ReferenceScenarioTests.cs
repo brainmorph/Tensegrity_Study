@@ -35,6 +35,10 @@ public class ReferenceScenarioTests
         new LockingWingScenario(),
         new LockingWingCollapseScenario(),
         new LockingWingPreloadedScenario(),
+
+        // M7
+        new CoupledWingScenario(),
+        new CoupledWingSwitchScenario(),
     ];
 
     public static TheoryData<string> All() => new(Scenarios.Select(s => s.Name));

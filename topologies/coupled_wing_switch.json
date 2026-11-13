@@ -1,0 +1,204 @@
+{
+  "format_version": 1,
+  "name": "coupled_wing_switch",
+  "description": "One-input coupled wing. The upper arm is bolted to the body (it is the ground frame, 0.30 m from the shoulder at the origin to the elbow). Forearm of two bones, ulna 0.35 m / 0.12 kg and radius 0.35 m / 0.04 kg, pinned 2 cm apart to the upper arm and to the hand (0.25 m / 0.06 kg): a parallelogram, so the hand stays parallel to the upper arm while the elbow folds. Elbow stops (k 100 N m/rad, c 2.5 N m s/rad) at open (0 degrees) and folded (-150 degrees). An elastic ligament (EA 200 N, c 5 N s/m) crosses the elbow and passes over it at -75 degrees, so it presses the elbow into the nearer stop with at least 0.5 N m beyond the wing\u0027s weight: the wing rests open and rests folded with the elbow servo idle. Standard gravity. The servo pushes the elbow toward folding with 2 N m for 0.15 s from 0.05 s (10 ms ramps), then lets go: the elbow is past the over-center angle, and the ligament finishes the fold and holds it on the folded stop. From 0.5 s the same pulse the other way opens the wing again. Between and after the pulses the servo is idle and the wing is locked.",
+  "gravity": [
+    0,
+    -9.81
+  ],
+  "constraint_stabilization": 50,
+  "links": [
+    {
+      "id": "ulna",
+      "role": "link",
+      "mass": 0.12,
+      "inertia": 0.0012249999999999997,
+      "length": 0.35,
+      "pose": {
+        "x": 0.475,
+        "y": 0,
+        "theta": 0
+      },
+      "twist": {
+        "vx": 0,
+        "vy": 0,
+        "omega": 0
+      }
+    },
+    {
+      "id": "radius",
+      "role": "link",
+      "mass": 0.04,
+      "inertia": 0.00040833333333333325,
+      "length": 0.35,
+      "pose": {
+        "x": 0.49431851652578135,
+        "y": 0.005176380902050282,
+        "theta": -7.5832197664129E-16
+      },
+      "twist": {
+        "vx": 0,
+        "vy": 0,
+        "omega": 0
+      }
+    },
+    {
+      "id": "hand",
+      "role": "link",
+      "mass": 0.06,
+      "inertia": 0.0003125,
+      "length": 0.25,
+      "pose": {
+        "x": 0.7749999999999999,
+        "y": -1.700029006457271E-15,
+        "theta": -1.3600232051658168E-14
+      },
+      "twist": {
+        "vx": 0,
+        "vy": 0,
+        "omega": 0
+      }
+    }
+  ],
+  "pins": [
+    {
+      "id": "elbow",
+      "a": {
+        "link": "ulna",
+        "point": [
+          -0.175,
+          0
+        ]
+      },
+      "b": {
+        "ground": [
+          0.3,
+          0
+        ]
+      },
+      "limit": {
+        "lower": -2.612349875505012,
+        "upper": -0.0050000000000050004,
+        "stiffness": 100,
+        "damping": 2.5
+      }
+    },
+    {
+      "id": "radius_root",
+      "a": {
+        "link": "radius",
+        "point": [
+          -0.175,
+          0
+        ]
+      },
+      "b": {
+        "ground": [
+          0.31931851652578136,
+          0.005176380902050415
+        ]
+      }
+    },
+    {
+      "id": "wrist",
+      "a": {
+        "link": "hand",
+        "point": [
+          -0.125,
+          0
+        ]
+      },
+      "b": {
+        "link": "ulna",
+        "point": [
+          0.175,
+          0
+        ]
+      }
+    },
+    {
+      "id": "radius_tip",
+      "a": {
+        "link": "radius",
+        "point": [
+          0.175,
+          0
+        ]
+      },
+      "b": {
+        "link": "hand",
+        "point": [
+          -0.10568148347421863,
+          0.005176380902050415
+        ]
+      }
+    }
+  ],
+  "cables": [
+    {
+      "id": "ligament",
+      "a": {
+        "ground": [
+          0.28964723819589916,
+          0.038637033051562734
+        ]
+      },
+      "b": {
+        "link": "ulna",
+        "point": [
+          -0.13499999999999998,
+          0
+        ]
+      },
+      "rest_length": 0.05282991135496924,
+      "axial_stiffness": 200,
+      "damping": 5
+    }
+  ],
+  "actuators": [
+    {
+      "id": "servo",
+      "pin": "elbow",
+      "schedule": [
+        {
+          "time": 0.05037,
+          "torque": 0
+        },
+        {
+          "time": 0.06037,
+          "torque": -2
+        },
+        {
+          "time": 0.21037,
+          "torque": -2
+        },
+        {
+          "time": 0.22037,
+          "torque": 0
+        },
+        {
+          "time": 0.50037,
+          "torque": 0
+        },
+        {
+          "time": 0.51037,
+          "torque": 2
+        },
+        {
+          "time": 0.66037,
+          "torque": 2
+        },
+        {
+          "time": 0.67037,
+          "torque": 0
+        }
+      ]
+    }
+  ],
+  "simulation": {
+    "dt": 0.0001,
+    "duration": 2,
+    "frame_stride": 100,
+    "event_tolerance": 1E-12
+  }
+}

@@ -1,0 +1,55 @@
+{
+  // Hand-written (PLAN.md 7a), following locking_wing: the run is
+  // deterministic, so poses use 1e-10. The radius's pins sit only 2 cm
+  // from the elbow and wrist, so its pin reactions are large and magnify
+  // a pose change, as the ligament's stiffness does: hence 1e-6 N.
+  "time": { "absolute": 1e-12, "relative": 0 },
+  "ulna_x": { "absolute": 1e-10, "relative": 0 },
+  "ulna_y": { "absolute": 1e-10, "relative": 0 },
+  "ulna_theta": { "absolute": 1e-10, "relative": 0 },
+  "radius_x": { "absolute": 1e-10, "relative": 0 },
+  "radius_y": { "absolute": 1e-10, "relative": 0 },
+  "radius_theta": { "absolute": 1e-10, "relative": 0 },
+  "hand_x": { "absolute": 1e-10, "relative": 0 },
+  "hand_y": { "absolute": 1e-10, "relative": 0 },
+  "hand_theta": { "absolute": 1e-10, "relative": 0 },
+  "tension_ligament": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_elbow_x": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_elbow_y": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_radius_root_x": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_radius_root_y": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_wrist_x": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_wrist_y": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_radius_tip_x": { "absolute": 1e-6, "relative": 1e-9 },
+  "reaction_radius_tip_y": { "absolute": 1e-6, "relative": 1e-9 },
+  "kinetic_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "potential_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "elastic_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  "dissipated_energy": { "absolute": 1e-10, "relative": 1e-10 },
+  // Work done by the gust, J.
+  "external_work": { "absolute": 1e-10, "relative": 1e-10 },
+  // Worst |E_total(t) - E_total(0)|, J. Measured 2.5e-10 over 2 s at
+  // dt = 1e-4 s: the 20 N gust peak and the rebound on to the open stop.
+  "max_energy_balance_error": { "absolute": 5e-11, "relative": 0 },
+  "max_pin_residual": { "absolute": 1e-13, "relative": 0 },
+  // Run-wide extremes of the elbow angle (rad) and its stop torque (N m),
+  // checked at every step. The gust folds the elbow about 13.5 degrees,
+  // well short of the over-center angle at 75; the open stop carries its
+  // preload throughout and catches the rebound.
+  "min_joint_angle_elbow": { "absolute": 1e-10, "relative": 0 },
+  "max_joint_angle_elbow": { "absolute": 1e-10, "relative": 0 },
+  "max_limit_torque_elbow": { "absolute": 1e-8, "relative": 1e-9 },
+  // Gust breakpoints and stop contact switches.
+  "event_count": { "absolute": 0, "relative": 0 },
+  "unresolved_steps": { "absolute": 0, "relative": 0 },
+  // Servo torque needed to hold the open pose, N m: zero by construction.
+  "holding_torque_elbow": { "absolute": 1e-9, "relative": 0 },
+  // The design from CoupledWingStatics: the ligament's rest length (m, by
+  // bisection), the torque pressing each stop beyond the wing's weight
+  // (N m; the weaker is the 0.5 N m preload), and the largest servo
+  // torque needed to hold the elbow anywhere along the fold (N m).
+  "ligament_rest_length": { "absolute": 1e-12, "relative": 0 },
+  "preload_torque_open": { "absolute": 1e-9, "relative": 0 },
+  "preload_torque_folded": { "absolute": 1e-9, "relative": 0 },
+  "peak_servo_torque": { "absolute": 1e-8, "relative": 0 }
+}

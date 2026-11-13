@@ -54,8 +54,18 @@ public static class ReferenceTopologies
     public static LockingWingGeometry PreloadedWing { get; } =
         new(HyperextensionStops: true, ElbowPreload: WingElbowPreload, WristPreload: WingWristPreload);
 
+    // Coupled wing parameters (PLAN.md M7): the CoupledWingGeometry defaults,
+    // the locking wing's gust, and these servo pulses. Each pulse only has
+    // to carry the elbow past the over-center angle; the ligament finishes
+    // the move. Their starts are off the step grid, like the gust's.
+    public const double CoupledWingServoTorque = 2.0;
+    public const double CoupledWingFoldStart = 0.05037;
+    public const double CoupledWingOpenStart = 0.50037;
+    public const double CoupledWingPulseHold = 0.15;
+    public const double CoupledWingPulseRamp = 0.01;
+
     public static IReadOnlyList<string> Names { get; } =
-        ["pendulum", "cable_oscillator", "planar_x", "planar_x_rest", "planar_x_free", "locking_arm", "locking_arm_collapse", "ground_drop", "perturbed_bar", "locking_wing", "locking_wing_collapse", "locking_wing_preloaded"];
+        ["pendulum", "cable_oscillator", "planar_x", "planar_x_rest", "planar_x_free", "locking_arm", "locking_arm_collapse", "ground_drop", "perturbed_bar", "locking_wing", "locking_wing_collapse", "locking_wing_preloaded", "coupled_wing", "coupled_wing_switch"];
 
     public static PlanarModel Create(string name) => name switch
     {
@@ -71,6 +81,8 @@ public static class ReferenceTopologies
         "locking_wing" => LockingWingGust(),
         "locking_wing_collapse" => LockingWingCollapse(),
         "locking_wing_preloaded" => LockingWingPreloaded(),
+        "coupled_wing" => CoupledWingGust(),
+        "coupled_wing_switch" => CoupledWingSwitch(),
         _ => throw new ArgumentException($"Unknown reference topology '{name}'. Known: {string.Join(", ", Names)}.", nameof(name)),
     };
 
@@ -211,6 +223,23 @@ public static class ReferenceTopologies
         LockingWing.Create(PreloadedWing, loads: [LockingWing.WingtipGust(WingGustImpulse, WingGustStart, WingGustDuration)]).With(
             name: "locking_wing_preloaded",
             description: WingSummary + ", and also stops against bending upward. The elbow and wrist tendons are shorter, so besides holding the wing they press each joint into its stop with 0.5 N m (elbow) and 0.075 N m (wrist), about its own gravity moment; this roughly doubles their tension. The stops sit preload/k short of straight (1.4 and 0.9 degrees), so the straight pose is exact. At 0.1 s the locking_wing gust hits the wingtip. The wrist bends to about 23 degrees as before, the elbow only to about 6 (10 without preload), and on the rebound both stop at their stops instead of the hand flicking up 52 degrees. The lock holds and the wing rings back to straight out.",
+            simulation: DefaultSimulation());
+
+    private const string CoupledWingSummary =
+        "One-input coupled wing. The upper arm is bolted to the body (it is the ground frame, 0.30 m from the shoulder at the origin to the elbow). Forearm of two bones, ulna 0.35 m / 0.12 kg and radius 0.35 m / 0.04 kg, pinned 2 cm apart to the upper arm and to the hand (0.25 m / 0.06 kg): a parallelogram, so the hand stays parallel to the upper arm while the elbow folds. Elbow stops (k 100 N m/rad, c 2.5 N m s/rad) at open (0 degrees) and folded (-150 degrees). An elastic ligament (EA 200 N, c 5 N s/m) crosses the elbow and passes over it at -75 degrees, so it presses the elbow into the nearer stop with at least 0.5 N m beyond the wing's weight: the wing rests open and rests folded with the elbow servo idle. Standard gravity";
+
+    /// <summary>The coupled wing resting open, hit by a downward gust at the wingtip.</summary>
+    public static PlanarModel CoupledWingGust() =>
+        CoupledWing.Create(loads: [CoupledWing.WingtipGust(WingGustImpulse, WingGustStart, WingGustDuration)]).With(
+            name: "coupled_wing",
+            description: CoupledWingSummary + ". The servo stays idle. At 0.1 s the locking_wing gust, 0.2 N s downward over 20 ms (peak 20 N), hits the wingtip. The whole wing folds about 14 degrees as one, well short of the over-center angle, and the ligament pulls it back on to the open stop: the lock holds.",
+            simulation: DefaultSimulation());
+
+    /// <summary>The coupled wing folded and opened again by two short servo pulses.</summary>
+    public static PlanarModel CoupledWingSwitch() =>
+        CoupledWing.Create(servo: CoupledWing.FoldAndOpen(CoupledWingServoTorque, CoupledWingFoldStart, CoupledWingOpenStart, CoupledWingPulseHold, CoupledWingPulseRamp)).With(
+            name: "coupled_wing_switch",
+            description: CoupledWingSummary + ". The servo pushes the elbow toward folding with 2 N m for 0.15 s from 0.05 s (10 ms ramps), then lets go: the elbow is past the over-center angle, and the ligament finishes the fold and holds it on the folded stop. From 0.5 s the same pulse the other way opens the wing again. Between and after the pulses the servo is idle and the wing is locked.",
             simulation: DefaultSimulation());
 
     /// <summary>The free-floating X with no gravity, after opposite twists on its struts (zero total momentum).</summary>

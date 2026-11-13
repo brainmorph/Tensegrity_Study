@@ -101,6 +101,18 @@ public sealed class ReferenceTopologyTests : IDisposable
                 return (model.System, model.InitialState.ToArray());
             }
 
+            case "coupled_wing":
+            {
+                var model = Coupled.Gusted();
+                return (model.System, model.InitialState.ToArray());
+            }
+
+            case "coupled_wing_switch":
+            {
+                var model = Coupled.Switching();
+                return (model.System, model.InitialState.ToArray());
+            }
+
             default:
                 throw new ArgumentException(name);
         }

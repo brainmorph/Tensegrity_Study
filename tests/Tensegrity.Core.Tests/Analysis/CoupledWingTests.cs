@@ -122,11 +122,79 @@ public sealed class CoupledWingTests
     }
 
     [Fact]
+    public void GustAtTheWingtipDoesNotUnlockTheOpenWing()
+    {
+        var (deepest, highest, end) = Run(ReferenceTopologies.CoupledWingGust(), 10_000, _ => { });
+
+        // It folds part of the way to the over-center angle and comes back on to the open stop.
+        Assert.InRange(deepest, Radians(-30), Radians(-5));
+        Assert.True(highest < Radians(2), $"rebound to {highest * 180 / Math.PI:F2} deg");
+        Assert.Equal(Geometry.OpenAngle, end, 1e-4);
+    }
+
+    [Fact]
+    public void ServoPulsesFoldTheWingThenOpenIt()
+    {
+        var model = ReferenceTopologies.CoupledWingSwitch();
+        var folded = double.NaN;
+        var handTilt = 0.0;
+
+        var (deepest, highest, end) = Run(model, 10_000, state =>
+        {
+            handTilt = Math.Max(handTilt, Math.Abs(model.System.GetPose(state.Values, 2).Angle));
+            if (state.Time < ReferenceTopologies.CoupledWingOpenStart)
+            {
+                folded = model.System.GetJointAngle(state.Values, 0).Angle;
+            }
+        });
+
+        // The servo is idle from 0.22 s to 0.5 s and after 0.67 s: the ligament holds each pose.
+        Assert.Equal(Geometry.FoldAngle, folded, 1e-4);
+        Assert.Equal(Geometry.OpenAngle, end, 1e-4);
+
+        // The stops catch it well short of the four-bar's change points, 15° beyond each.
+        Assert.True(deepest > Geometry.FoldAngle - Radians(7), $"overshot the fold to {deepest * 180 / Math.PI:F2} deg");
+        Assert.True(highest < Geometry.OpenAngle + Radians(7), $"overshot open to {highest * 180 / Math.PI:F2} deg");
+
+        // And the hand never tilts: one input moves the whole wing.
+        Assert.True(handTilt < 1e-9, $"hand tilted {handTilt:E2} rad");
+    }
+
+    [Fact]
+    public void ServoPulseIsWithinTheServosTorqueAndTheBarrierNeedsIt()
+    {
+        var peak = Enumerable.Range(0, 1501).Max(i => Math.Abs(Statics.ServoTorque(Geometry.FoldAngle + ((Geometry.OpenAngle - Geometry.FoldAngle) * i / 1500))));
+
+        // Holding the elbow anywhere along the fold takes about 1 N m; the pulse has margin over that.
+        Assert.InRange(peak, 0.9, 1.1);
+        Assert.True(ReferenceTopologies.CoupledWingServoTorque > peak);
+        Assert.True(ReferenceTopologies.CoupledWingServoTorque < 3.4, "the five-bar spec's servo limit");
+    }
+
+    [Fact]
     public void FourBarCannotCloseBeyondItsReach()
     {
         var stretched = Geometry with { RadiusLength = 0.30 };
 
         Assert.Throws<ArgumentOutOfRangeException>(() => new CoupledWingStatics(stretched).Pose(Radians(15)));
+    }
+
+    /// <summary>Runs <paramref name="model"/> and returns the elbow angle's extremes and its final value.</summary>
+    private static (double Deepest, double Highest, double End) Run(PlanarModel model, long steps, Action<SystemState> observe)
+    {
+        var state = model.CreateInitialState();
+        var stepper = new EventSplittingStepper(new Rk4Integrator(), model.System);
+        var deepest = double.PositiveInfinity;
+        var highest = double.NegativeInfinity;
+        FixedStepRunner.Run(state, stepper, 1e-4, steps, (_, s) =>
+        {
+            var elbow = model.System.GetJointAngle(s.Values, 0).Angle;
+            deepest = Math.Min(deepest, elbow);
+            highest = Math.Max(highest, elbow);
+            observe(s);
+        });
+
+        return (deepest, highest, model.System.GetJointAngle(state.Values, 0).Angle);
     }
 
     private static double Radians(double degrees) => degrees * Math.PI / 180;
